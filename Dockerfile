@@ -1,6 +1,10 @@
-ARG PYTORCH="1.13.1"
-ARG CUDA="11.6"
+ARG PYTORCH="2.0.1"
+ARG CUDA="11.7"
 ARG CUDNN="8"
+
+# ARG PYTORCH="1.13.1"
+# ARG CUDA="11.6"
+# ARG CUDNN="8"
 
 FROM pytorch/pytorch:${PYTORCH}-cuda${CUDA}-cudnn${CUDNN}-devel
 
@@ -13,6 +17,6 @@ FROM pytorch/pytorch:${PYTORCH}-cuda${CUDA}-cudnn${CUDNN}-devel
 RUN apt update && apt install -y git 
 RUN git clone https://github.com/SavickTso/HisRepItself.git
 RUN pip install h5py scipy matplotlib pandas
-COPY ../../dataset/.   /workspace/HisRepItself/dataset
+COPY datasets/.   /workspace/HisRepItself/datasets/.
 
 
