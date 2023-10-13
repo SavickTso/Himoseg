@@ -1,4 +1,9 @@
 ## History Repeats Itself: Human Motion Prediction via Motion Attention
+
+## Docker commands
+Create container with local dataset: 
+```docker run -it --network=host -e DISPLAY=$DISPLAY --gpus all -v ~/dataset/.:/workspace/HisRepItself/datasets/ --rm hisrepeat```
+
 This is the code for the paper
 
 Wei Mao, Miaomiao Liu, Mathieu Salzmann. 
