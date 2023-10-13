@@ -14,9 +14,9 @@ FROM pytorch/pytorch:${PYTORCH}-cuda${CUDA}-cudnn${CUDNN}-devel
 # RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
 # RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1804/x86_64/7fa2af80.pub
 
-RUN apt update && apt install -y git 
+RUN apt update && apt install -y git vim
 RUN git clone https://github.com/SavickTso/HisRepItself.git
-RUN pip install h5py scipy matplotlib pandas
-COPY datasets/.   /workspace/HisRepItself/datasets/.
+RUN pip install h5py scipy matplotlib pandas progress
+# COPY datasets/.   /workspace/HisRepItself/datasets/.
 
 
