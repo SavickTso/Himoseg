@@ -1,7 +1,7 @@
 {
     "exp": "stagcn_cmu_3d_in50_out25_ks5_dctn10",
     "is_eval": false,
-    "ckpt": "checkpoint/",
+    "ckpt": "checkpoint/stagcn_cmu_3d_in50_out25_ks5_dctn10",
     "skip_rate": 5,
     "skip_rate_test": 5,
     "in_features": 54,

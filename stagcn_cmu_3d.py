@@ -4,6 +4,7 @@ from utils.opt import Options
 from utils import util
 from utils import log
 
+import IPython
 from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
@@ -143,6 +144,7 @@ def main():
         pin_memory=False,
     )
 
+    print("so far so good")
     # data_loader = dict()
     # data_loader["train"] = torch.utils.data.DataLoader(
     #     dataset=Feeder(
@@ -166,7 +168,9 @@ def main():
     for epoch in range(1, NUM_EPOCH + 1):
         correct_pb = 0
         sum_loss = 0
+        IPython.embed()
         for batch_idx, (data, label) in enumerate(data_loader["train"]):
+            print("still not bad")
             data = data.cuda()
             label = label.cuda()
 
@@ -191,5 +195,5 @@ def main():
 
 
 if __name__ == "__main__":
-    option = Options().parse()
-    main(option)
+    # option = Options().parse()
+    main()

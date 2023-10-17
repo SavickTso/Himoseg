@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from STGCN import STGC_Block
+from model import STGCN
 
 
 class PerceptionBranch(nn.Module):
@@ -25,13 +25,13 @@ class PerceptionBranch(nn.Module):
             num_att_edge=num_att_edge,
             use_att_edge=use_att_edge,
         )
-        self.stgc_block1 = STGC_Block(
+        self.stgc_block1 = STGCN.STGC_Block(
             config[0][0], config[0][1], config[0][2], **kwargs
         )
-        self.stgc_block2 = STGC_Block(
+        self.stgc_block2 = STGCN.STGC_Block(
             config[1][0], config[1][1], config[1][2], **kwargs
         )
-        self.stgc_block3 = STGC_Block(
+        self.stgc_block3 = STGCN.STGC_Block(
             config[2][0], config[2][1], config[2][2], **kwargs
         )
 

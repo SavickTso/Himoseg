@@ -29,7 +29,7 @@ class Datasets(Dataset):
         self.keys = []
         self.data_idx = []
         self.joint_used = np.arange(4, 22)
-        seq_len = self.in_n + self.out_n
+        # seq_len = self.in_n + self.out_n
 
         skel = np.load("./body_models/smpl_skeleton.npz")
         p3d0 = torch.from_numpy(skel["p3d0"]).float().cuda()
@@ -77,9 +77,9 @@ class Datasets(Dataset):
                 # self.p3d[(ds, sub, act)] = p3d.cpu().data.numpy()
                 self.p3d.append(p3d.cpu().data.numpy())
                 if split == 2:
-                    valid_frames = np.arange(0, fn - seq_len + 1, skip_rate)
+                    valid_frames = np.arange(0, fn, skip_rate)
                 else:
-                    valid_frames = np.arange(0, fn - seq_len + 1, skip_rate)
+                    valid_frames = np.arange(0, fn, skip_rate)
 
                 # tmp_data_idx_1 = [(ds, sub, act)] * len(valid_frames)
                 self.keys.append((ds, sub, act))
