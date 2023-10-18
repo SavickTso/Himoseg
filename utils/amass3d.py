@@ -5,7 +5,7 @@ import scipy.io as sio
 from utils import data_utils
 from matplotlib import pyplot as plt
 import torch
-import os
+import os, sys
 from utils import ang2joint
 
 
@@ -68,15 +68,18 @@ class Datasets(Dataset):
             parent[i] = parents[i]
         n = 0
         # for ds in amass_splits[split]:
-        ds = "CMU"
+        ds = "BMLmovi"
         if not os.path.isdir(self.path_to_data + ds):
             print(ds)
-            exit
+            sys.exit()
         print(">>> loading {}".format(ds))
         for sub in os.listdir(self.path_to_data + ds):
+            print(self.path_to_data + ds)
             if not os.path.isdir(self.path_to_data + ds + "/" + sub):
                 continue
             for act in os.listdir(self.path_to_data + ds + "/" + sub):
+                print(act)
+
                 if not act.endswith(".npz"):
                     continue
                 # if not ('walk' in act or 'jog' in act or 'run' in act or 'treadmill' in act):
