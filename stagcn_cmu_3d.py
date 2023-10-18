@@ -1,4 +1,4 @@
-from utils import amass3d as datasets
+from utils import amass as datasets
 from model import Graph, Percep_branch, STGCN, Att_branch
 from utils.opt import Options
 from utils import util
@@ -115,7 +115,7 @@ def main():
 
     # データセットの用意
     data_loader = dict()
-    dataset = datasets.Datasets(1, split=0)
+    dataset = datasets.Datasets(split=0)
     print(">>> Training dataset length: {:d}".format(dataset.__len__()))
     data_loader["train"] = DataLoader(
         dataset,
