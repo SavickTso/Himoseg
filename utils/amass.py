@@ -1,3 +1,4 @@
+import pandas as pd
 from torch.utils.data import Dataset
 import numpy as np
 from h5py import File
@@ -9,10 +10,27 @@ import os
 import re
 import IPython
 from utils import ang2joint
+from torch.nn.utils.rnn import pad_sequence
+from sklearn.preprocessing import LabelEncoder
+
+
+def custom_collate(batch):
+    # Find the length of the longest data sample in the batch
+    max_len = max(len(data) for data in batch)
+
+    # Pad or truncate each data sample to match the max length
+    padded_data = [
+        torch.nn.functional.pad(data, (0, max_len - len(data))) for data in batch
+    ]
+
+    # Stack the padded data samples to create a batch
+    padded_data = torch.stack(padded_data)
+
+    return padded_data
 
 
 class Datasets(Dataset):
-    def __init__(self, actions=None, split=0):
+    def __init__(self, actions=None):
         """
         :param path_to_data:
         :param actions:
@@ -22,8 +40,8 @@ class Datasets(Dataset):
         :param split: 0 train, 1 testing, 2 validation
         :param sample_rate:
         """
+        # self.path_to_data = "../../dataset/amass/"
         self.path_to_data = "./datasets/amass/"
-        self.split = split
         # self.in_n = opt.input_n
         # self.out_n = opt.output_n
         # self.sample_rate = opt.sample_rate
@@ -55,8 +73,7 @@ class Datasets(Dataset):
             for act in os.listdir(self.path_to_data + ds + "/" + sub):
                 if not act.endswith(".npz"):
                     continue
-                # if not ('walk' in act or 'jog' in act or 'run' in act or 'treadmill' in act):
-                #     continue
+
                 pose_all = np.load(self.path_to_data + ds + "/" + sub + "/" + act)
                 try:
                     poses = pose_all["poses"]
@@ -65,25 +82,20 @@ class Datasets(Dataset):
                     continue
                 frame_rate = pose_all["mocap_framerate"]
 
-                # fn = poses.shape[0]
-                # sample_rate = 1  # int(frame_rate // 25)
-                # fidxs = range(0, fn, sample_rate)
-                # fn = len(fidxs)
-                # poses = poses[fidxs]
                 poses = torch.from_numpy(poses).float().cuda()
                 poses = poses.reshape([poses.shape[0], -1, 3])
                 # remove global rotation
                 poses[:, 0] = 0
                 p3d0_tmp = p3d0.repeat([poses.shape[0], 1, 1])
                 p3d = ang2joint.ang2joint(p3d0_tmp, poses, parent)
+                # p3d_pad = pad_sequence(p3d, batch_first=True)
                 # print("for act {}, the shape of p3d is {}".format(act, p3d.shape))
                 # self.p3d[(ds, sub, act)] = p3d.cpu().data.numpy()
                 self.p3d.append(p3d.cpu().data.numpy())
-
                 # valid_frames = np.arange(0, fn, skip_rate)
 
                 # # tmp_data_idx_1 = [(ds, sub, act)] * len(valid_frames)
-                print("extracted number in this act", act)
+                # print("extracted number in this act", act)
 
                 match = re.search(pattern, act)
                 # print(int(match.group(1)), "   ", int(match.group(2)))
@@ -98,12 +110,35 @@ class Datasets(Dataset):
                 # tmp_data_idx_2 = list(valid_frames)
                 # self.data_idx.extend(zip(tmp_data_idx_1, tmp_data_idx_2))
                 # n += 1
-        IPython.embed()
+        # self.data = self.p3d
+        self.data = pad_sequence(
+            [torch.tensor(arr) for arr in self.p3d], batch_first=True
+        )
+        self.data = torch.einsum("nctw->nwct", self.data)
+        print("self.data's shape after transpose:", self.data.shape)
+        string_labels = self.keys
+        label_encoder = LabelEncoder()
+        self.numeric_labels = label_encoder.fit_transform(string_labels)
+        # IPython.embed()
+        # print(self.numeric_labels)
+
+        # df = pd.DataFrame({"labels": self.keys})
+        # numeric_labels = pd.get_dummies(df, columns=["labels"])
+        # for lb in numeric_labels.columns:
+        #     print(lb, sum(numeric_labels[lb]))
+        # IPython.embed()
+        # print(numeric_labels)
 
     def __len__(self):
-        return np.shape(self.data_idx)[0]
+        return len(self.numeric_labels)
+        # return np.shape(self.data_idx)[0]
+
+    def __iter__(self):
+        return self
 
     def __getitem__(self, item):
-        key, start_frame = self.data_idx[item]
+        # key, start_frame = self.data_idx[item]
         # fs = np.arange(start_frame, start_frame + self.in_n + self.out_n)
-        return self.p3d[key]  # [fs]  # , key
+        data = self.data[item]
+        label = self.numeric_labels[item]
+        return data, label  # [fs]  # , key

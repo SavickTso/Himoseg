@@ -5,7 +5,7 @@ from utils import util
 from utils import log
 
 import IPython
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 import torch
 import torch.nn as nn
 import numpy as np
@@ -93,14 +93,14 @@ class STA_GCN(nn.Module):
 
 
 def main():
-    NUM_EPOCH = 100
-    BATCH_SIZE = 64
+    BATCH_SIZE = 8
+    NUM_EPOCH = 150
     HOP_SIZE = 2
     NUM_ATT_EDGE = 2  # 動作ごとのattention edgeの生成数
 
     # モデルを作成
     model = STA_GCN(
-        num_classes=10,
+        num_classes=45,
         in_channels=3,
         t_kernel_size=9,  # 時間グラフ畳み込みのカーネルサイズ (t_kernel_size × 1)
         hop_size=HOP_SIZE,
@@ -115,67 +115,43 @@ def main():
 
     # データセットの用意
     data_loader = dict()
-    dataset = datasets.Datasets(split=0)
+    dataset = datasets.Datasets()
+    # IPython.embed()
+    test_size = int(0.2 * len(dataset))
+    train_size = len(dataset) - test_size
+    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+
     print(">>> Training dataset length: {:d}".format(dataset.__len__()))
     data_loader["train"] = DataLoader(
-        dataset,
-        batch_size=64,
-        shuffle=True,
+        train_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
         num_workers=0,
         pin_memory=False,
     )
-    # valid_dataset = datasets.Datasets(1, split=1)
-    # print(">>> Validation dataset length: {:d}".format(valid_dataset.__len__()))
-    # valid_loader = DataLoader(
-    #     valid_dataset,
-    #     batch_size=64,
-    #     shuffle=True,
-    #     num_workers=0,
-    #     pin_memory=False,
-    # )
-
-    test_dataset = datasets.Datasets(1, split=2)
-    print(">>> Testing dataset length: {:d}".format(test_dataset.__len__()))
     data_loader["test"] = DataLoader(
         test_dataset,
-        batch_size=64,
+        batch_size=BATCH_SIZE,
         shuffle=False,
         num_workers=0,
         pin_memory=False,
     )
 
-    print("so far so good")
-    # data_loader = dict()
-    # data_loader["train"] = torch.utils.data.DataLoader(
-    #     dataset=Feeder(
-    #         data_path="data/train_data.npy", label_path="data/train_label.npy"
-    #     ),
-    #     batch_size=BATCH_SIZE,
-    #     shuffle=True,
-    # )
-    # data_loader["test"] = torch.utils.data.DataLoader(
-    #     dataset=Feeder(
-    #         data_path="data/test_data.npy", label_path="data/test_label.npy"
-    #     ),
-    #     batch_size=BATCH_SIZE,
-    #     shuffle=False,
-    # )
-
-    # モデルを学習モードに変更
     model.train()
-
+    print(model)
     # 学習開始
     for epoch in range(1, NUM_EPOCH + 1):
         correct_pb = 0
         sum_loss = 0
-        IPython.embed()
+        # IPython.embed()
         for batch_idx, (data, label) in enumerate(data_loader["train"]):
-            print("still not bad")
             data = data.cuda()
             label = label.cuda()
-
+            # print(batch_idx)
+            # print(label)
             output_ab, output_pb, _, _ = model(data)
-
+            # print(output_ab.shape)
+            # print(output_pb.shape)
             loss = criterion(output_ab, label) + criterion(output_pb, label)
             optimizer.zero_grad()
             loss.backward()
@@ -192,6 +168,25 @@ def main():
                 (100.0 * correct_pb / len(data_loader["train"].dataset)),
             )
         )
+
+    model.eval()
+
+    correct_pb = 0
+    with torch.no_grad():
+        for batch_idx, (data, label) in enumerate(data_loader["test"]):
+            data = data.cuda()
+            label = label.cuda()
+
+            output_ab, output_pb, _, _ = model(data)
+
+            _, predict = torch.max(output_pb.data, 1)
+            correct_pb += (predict == label).sum().item()
+
+    print(
+        "# Test Accuracy: {:.3f}[%]".format(
+            100.0 * correct_pb / len(data_loader["test"].dataset)
+        )
+    )
 
 
 if __name__ == "__main__":
