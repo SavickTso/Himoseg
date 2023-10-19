@@ -14,6 +14,13 @@ from torch.nn.utils.rnn import pad_sequence
 from sklearn.preprocessing import LabelEncoder
 
 
+def motion_downsample(fn, poses, sample_rate):
+    fidxs = range(0, fn, sample_rate)
+    fn = len(fidxs)
+    poses = poses[fidxs]
+    return fn, poses
+
+
 def custom_collate(batch):
     # Find the length of the longest data sample in the batch
     max_len = max(len(data) for data in batch)
@@ -81,12 +88,18 @@ class Datasets(Dataset):
                     # print("no poses at {}_{}_{}".format(ds, sub, act))
                     continue
                 frame_rate = pose_all["mocap_framerate"]
+                fn = poses.shape[0]
+
+                ### start of down sample
+                sample_rate = int(frame_rate // 25)
+                fn, poses = motion_downsample(fn, poses, sample_rate)
+                ### end of down sample
 
                 poses = torch.from_numpy(poses).float().cuda()
-                poses = poses.reshape([poses.shape[0], -1, 3])
+                poses = poses.reshape([fn, -1, 3])
                 # remove global rotation
                 poses[:, 0] = 0
-                p3d0_tmp = p3d0.repeat([poses.shape[0], 1, 1])
+                p3d0_tmp = p3d0.repeat([fn, 1, 1])
                 p3d = ang2joint.ang2joint(p3d0_tmp, poses, parent)
                 # p3d_pad = pad_sequence(p3d, batch_first=True)
                 # print("for act {}, the shape of p3d is {}".format(act, p3d.shape))
@@ -111,10 +124,12 @@ class Datasets(Dataset):
                 # self.data_idx.extend(zip(tmp_data_idx_1, tmp_data_idx_2))
                 # n += 1
         # self.data = self.p3d
+
         self.data = pad_sequence(
             [torch.tensor(arr) for arr in self.p3d], batch_first=True
         )
         self.data = torch.einsum("nctw->nwct", self.data)
+        print(self.data.shape)
         print("self.data's shape after transpose:", self.data.shape)
         string_labels = self.keys
         label_encoder = LabelEncoder()

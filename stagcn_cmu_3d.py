@@ -94,7 +94,7 @@ class STA_GCN(nn.Module):
 
 def main():
     BATCH_SIZE = 8
-    NUM_EPOCH = 150
+    NUM_EPOCH = 100
     HOP_SIZE = 2
     NUM_ATT_EDGE = 2  # 動作ごとのattention edgeの生成数
 
@@ -168,6 +168,8 @@ def main():
                 (100.0 * correct_pb / len(data_loader["train"].dataset)),
             )
         )
+        # if 100.0 * correct_pb / len(data_loader["train"].dataset) >= 97:
+        #     break
 
     model.eval()
 
@@ -176,17 +178,19 @@ def main():
         for batch_idx, (data, label) in enumerate(data_loader["test"]):
             data = data.cuda()
             label = label.cuda()
-
+            tic = time.time()
             output_ab, output_pb, _, _ = model(data)
 
             _, predict = torch.max(output_pb.data, 1)
             correct_pb += (predict == label).sum().item()
+            print("inference time is", time.time() - tic)
 
     print(
         "# Test Accuracy: {:.3f}[%]".format(
             100.0 * correct_pb / len(data_loader["test"].dataset)
         )
     )
+    IPython.embed()
 
 
 if __name__ == "__main__":
