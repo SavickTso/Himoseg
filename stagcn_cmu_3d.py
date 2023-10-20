@@ -93,7 +93,7 @@ class STA_GCN(nn.Module):
 
 
 def main():
-    BATCH_SIZE = 8
+    BATCH_SIZE = 32
     NUM_EPOCH = 100
     HOP_SIZE = 2
     NUM_ATT_EDGE = 2  # 動作ごとのattention edgeの生成数
@@ -108,7 +108,7 @@ def main():
     ).cuda()
 
     # オプティマイザ
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
     # 誤差関数
     criterion = torch.nn.CrossEntropyLoss()

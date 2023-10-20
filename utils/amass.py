@@ -13,6 +13,29 @@ from utils import ang2joint
 from torch.nn.utils.rnn import pad_sequence
 from sklearn.preprocessing import LabelEncoder
 
+EXCLUDE_CLASS_LIST = [
+    "bicep_curls_rm",
+    "coughing_rm",
+    "dj-ing_rm",
+    "dribbling_rm",
+    "fencing_rm",
+    "front_swimming_rm",
+    "hopping_rm",
+    "juggling_rm",
+    "lunges_rm",
+    "punching_rm",
+    "pushups_rm",
+    "rowing_rm",
+    "serving_rm",
+    "stretching_rm",
+    "wearing_belt_rm",
+    "yoga_rm",
+    "free_throw_rm",
+    "throwing_frisbee_rm",
+    "swinging_arms_rm",
+    "swinging_racket_rm",
+]
+
 
 def motion_downsample(fn, poses, sample_rate):
     fidxs = range(0, fn, sample_rate)
@@ -104,7 +127,6 @@ class Datasets(Dataset):
                 # p3d_pad = pad_sequence(p3d, batch_first=True)
                 # print("for act {}, the shape of p3d is {}".format(act, p3d.shape))
                 # self.p3d[(ds, sub, act)] = p3d.cpu().data.numpy()
-                self.p3d.append(p3d.cpu().data.numpy())
                 # valid_frames = np.arange(0, fn, skip_rate)
 
                 # # tmp_data_idx_1 = [(ds, sub, act)] * len(valid_frames)
@@ -112,13 +134,22 @@ class Datasets(Dataset):
 
                 match = re.search(pattern, act)
                 # print(int(match.group(1)), "   ", int(match.group(2)))
+
+                ### skip classes that have less than 5 samples
+
                 if int(match.group(2)) == 22:
                     self.keys.append("scratching_head")
+                elif (
+                    labels[int(match.group(1)) - 1][int(match.group(2)) - 1]
+                    in EXCLUDE_CLASS_LIST
+                ):
+                    continue
                 else:
                     self.keys.append(
                         labels[int(match.group(1)) - 1][int(match.group(2)) - 1]
                     )
 
+                self.p3d.append(p3d.cpu().data.numpy())
                 # tmp_data_idx_1 = [n] * len(valid_frames)
                 # tmp_data_idx_2 = list(valid_frames)
                 # self.data_idx.extend(zip(tmp_data_idx_1, tmp_data_idx_2))
@@ -134,6 +165,7 @@ class Datasets(Dataset):
         string_labels = self.keys
         label_encoder = LabelEncoder()
         self.numeric_labels = label_encoder.fit_transform(string_labels)
+        print(label_encoder.classes_, len(label_encoder.classes_))
         # IPython.embed()
         # print(self.numeric_labels)
 
