@@ -62,6 +62,19 @@ class AttentionBranch(nn.Module):
         self.tanh = nn.Tanh()
         self.relu = nn.ReLU()
 
+        # Attention frame pairs
+        # frame* frame
+        self.num_att_frame = 2533
+        self.att_frame_conv = nn.Conv2d(
+            num_classes,
+            self.num_att_frame * self.num_att_frame,
+            kernel_size=1,
+            padding=0,
+            stride=1,
+            bias=False,
+        )
+        self.att_frame_bn = nn.BatchNorm2d(self.num_att_frame**2)
+
     def forward(self, x, A):
         N, c, T, V = x.size()
 
@@ -85,6 +98,8 @@ class AttentionBranch(nn.Module):
         x_node = self.att_node_bn(x_node)
         x_node = F.interpolate(x_node, size=(T, V))
         att_node = self.sigmoid(x_node)
+        print("attnodes shape are: ", att_node.shape)
+        print("attnodes are: ", att_node)
 
         # Attention edge
         x_edge = F.avg_pool2d(x_att, (x_att.size()[2], 1))
@@ -93,8 +108,18 @@ class AttentionBranch(nn.Module):
         x_edge = x_edge.view(N, self.num_att_edge, V, V)
         x_edge = self.tanh(x_edge)
         att_edge = self.relu(x_edge)
+        print("attedges shape are: ", att_edge.shape)
+        print("attedges are: ", att_edge)
 
-        return output, att_node, att_edge
+        # Attention Frame
+        x_fpair = self.att_node_conv(x_att)
+        x_fpair = self.att_node_bn(x_fpair)
+        x_fpair = F.interpolate(x_fpair, size=(T, T))
+        att_frame = self.sigmoid(x_fpair)
+        print("attframes shape are: ", att_frame.shape)
+        print("attframes are: ", att_frame)
+
+        return output, att_node, att_edge  # , attframe
 
 
 class FeatureExtractor(nn.Module):

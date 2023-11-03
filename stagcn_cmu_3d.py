@@ -93,7 +93,7 @@ class STA_GCN(nn.Module):
 
 
 def main():
-    BATCH_SIZE = 32
+    BATCH_SIZE = 8
     NUM_EPOCH = 100
     HOP_SIZE = 2
     NUM_ATT_EDGE = 2  # 動作ごとのattention edgeの生成数
@@ -102,14 +102,15 @@ def main():
     model = STA_GCN(
         num_classes=45,
         in_channels=3,
-        t_kernel_size=9,  # 時間グラフ畳み込みのカーネルサイズ (t_kernel_size × 1)
+        t_kernel_size=17,  # original 9, 時間グラフ畳み込みのカーネルサイズ (t_kernel_size × 1)
         hop_size=HOP_SIZE,
         num_att_edge=NUM_ATT_EDGE,
     ).cuda()
 
     # オプティマイザ
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-
+    # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.5)
+    # use Adam
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     # 誤差関数
     criterion = torch.nn.CrossEntropyLoss()
 
@@ -168,7 +169,7 @@ def main():
                 (100.0 * correct_pb / len(data_loader["train"].dataset)),
             )
         )
-        # if 100.0 * correct_pb / len(data_loader["train"].dataset) >= 97:
+        # if 100.0 * correct_pb / len(data_loader["train"].dataset) >= 20:
         #     break
 
     model.eval()

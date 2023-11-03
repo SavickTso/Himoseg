@@ -114,8 +114,8 @@ class Datasets(Dataset):
                 fn = poses.shape[0]
 
                 ### start of down sample
-                sample_rate = int(frame_rate // 25)
-                fn, poses = motion_downsample(fn, poses, sample_rate)
+                # sample_rate = int(frame_rate // 25)
+                # fn, poses = motion_downsample(fn, poses, sample_rate)
                 ### end of down sample
 
                 poses = torch.from_numpy(poses).float().cuda()
