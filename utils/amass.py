@@ -2,6 +2,7 @@ import pandas as pd
 from torch.utils.data import Dataset
 import numpy as np
 from h5py import File
+import sys
 import scipy.io as sio
 from utils import data_utils
 from matplotlib import pyplot as plt
@@ -95,7 +96,7 @@ class Datasets(Dataset):
         ds = "BMLmovi"
         if not os.path.isdir(self.path_to_data + ds):
             print(ds)
-            exit
+            sys.exit()
         print(">>> loading {}".format(ds))
         for sub in os.listdir(self.path_to_data + ds):
             if not os.path.isdir(self.path_to_data + ds + "/" + sub):
@@ -114,8 +115,8 @@ class Datasets(Dataset):
                 fn = poses.shape[0]
 
                 ### start of down sample
-                # sample_rate = int(frame_rate // 25)
-                # fn, poses = motion_downsample(fn, poses, sample_rate)
+                sample_rate = int(frame_rate // 25)
+                fn, poses = motion_downsample(fn, poses, sample_rate)
                 ### end of down sample
 
                 poses = torch.from_numpy(poses).float().cuda()
@@ -159,8 +160,12 @@ class Datasets(Dataset):
         self.data = pad_sequence(
             [torch.tensor(arr) for arr in self.p3d], batch_first=True
         )
-        self.data = torch.einsum("nctw->nwct", self.data)
-        print(self.data.shape)
+        print("self.data's shape before transpose:", self.data.shape)
+        # self.data = torch.einsum("nctw->nwct", self.data)
+        # self.data = (
+        #     self.data.permute(0, 2, 1, 3).contiguous().flatten(start_dim=2, end_dim=3)
+        # )
+        self.data = self.data.flatten(start_dim=2, end_dim=3)
         print("self.data's shape after transpose:", self.data.shape)
         string_labels = self.keys
         label_encoder = LabelEncoder()

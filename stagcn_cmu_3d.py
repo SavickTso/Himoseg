@@ -100,7 +100,7 @@ def main():
 
     # モデルを作成
     model = STA_GCN(
-        num_classes=45,
+        num_classes=23,
         in_channels=3,
         t_kernel_size=17,  # original 9, 時間グラフ畳み込みのカーネルサイズ (t_kernel_size × 1)
         hop_size=HOP_SIZE,
@@ -152,7 +152,8 @@ def main():
             # print(label)
             output_ab, output_pb, _, _ = model(data)
             # print(output_ab.shape)
-            # print(output_pb.shape)
+            print(output_pb.shape)
+            print(output_pb)
             loss = criterion(output_ab, label) + criterion(output_pb, label)
             optimizer.zero_grad()
             loss.backward()
