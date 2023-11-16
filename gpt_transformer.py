@@ -43,11 +43,15 @@ class MultiHeadAttention(nn.Module):
 
         # Attention calculation
         energy = torch.matmul(query, key.permute(0, 1, 3, 2)) / (self.head_dim**0.5)
-
+        # print("energy's shape is", energy.shape)
+        print("energy's sample1, head1 is", energy[0][0])
+        # IPython.embed()
+        # sys.exit()
         if mask is not None:
             energy = energy.masked_fill(mask == 0, float("-1e20"))
 
         attention = torch.softmax(energy, dim=-1)
+        print("attention's shape is", attention.shape)
         x = torch.matmul(attention, value)
 
         # Reshape and concatenate
@@ -127,6 +131,7 @@ class Transformer(nn.Module):
         self.classification_head = nn.Linear(d_model, num_classes)
 
     def forward(self, x, mask):
+        print("input x shape", x.shape)
         x = self.positional_encoding(x)
         for transformer_block in self.transformer_blocks:
             x = transformer_block(x, mask)
@@ -137,7 +142,7 @@ class Transformer(nn.Module):
         return x
 
 
-seed = 123
+seed = 42
 # Numpy
 np.random.seed(seed)
 # Pytorch
@@ -161,7 +166,7 @@ BATCH_SIZE = 8
 NUM_EPOCH = 100
 
 model = Transformer(d_model, n_heads, d_ff, num_blocks, max_len, num_classes, dropout)
-input_data = torch.randn((sample_number, sequence_length, data_dimension))
+# input_data = torch.randn((sample_number, sequence_length, data_dimension))
 # mask = torch.ones((sample_number, sequence_length))
 mask = None
 

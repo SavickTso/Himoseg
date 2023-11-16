@@ -161,11 +161,11 @@ class Datasets(Dataset):
             [torch.tensor(arr) for arr in self.p3d], batch_first=True
         )
         print("self.data's shape before transpose:", self.data.shape)
-        # self.data = torch.einsum("nctw->nwct", self.data)
+        self.data = torch.einsum("nctw->nwct", self.data)
         # self.data = (
         #     self.data.permute(0, 2, 1, 3).contiguous().flatten(start_dim=2, end_dim=3)
         # )
-        self.data = self.data.flatten(start_dim=2, end_dim=3)
+        # self.data = self.data.flatten(start_dim=2, end_dim=3)
         print("self.data's shape after transpose:", self.data.shape)
         string_labels = self.keys
         label_encoder = LabelEncoder()

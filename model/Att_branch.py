@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import IPython
@@ -5,6 +6,22 @@ from model import STGCN
 from model import utils_rf
 
 # from utils_rf import scaled_dot_product, expand_mask
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=634):
+        super(PositionalEncoding, self).__init__()
+        position = torch.arange(0, max_len).unsqueeze(1).float().cuda()
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2).float()
+            * -(torch.log(torch.tensor(10000.0)) / d_model)
+        ).cuda()
+        self.positional_encoding = torch.zeros((1, max_len, d_model)).cuda()
+        self.positional_encoding[0, :, 0::2] = torch.sin(position * div_term)
+        self.positional_encoding[0, :, 1::2] = torch.cos(position * div_term)
+
+    def forward(self, x):
+        return x + self.positional_encoding[:, : x.size(1)].detach()
 
 
 class MultiheadAttention(nn.Module):
@@ -53,6 +70,59 @@ class MultiheadAttention(nn.Module):
             return o
 
 
+class MultiHeadAttention(nn.Module):
+    def __init__(self, d_model, n_heads):
+        super(MultiHeadAttention, self).__init__()
+        self.n_heads = n_heads
+        self.head_dim = d_model // n_heads
+
+        self.fc_query = nn.Linear(d_model, d_model)
+        self.fc_key = nn.Linear(d_model, d_model)
+        self.fc_value = nn.Linear(d_model, d_model)
+
+        self.fc_out = nn.Linear(d_model, d_model)
+
+    def forward(self, query, key, value, mask=None):
+        # Linear transformations
+        query = self.fc_query(query)
+        key = self.fc_key(key)
+        value = self.fc_value(value)
+
+        # Reshape for multi-heads
+        query = query.view(query.shape[0], -1, self.n_heads, self.head_dim).permute(
+            0, 2, 1, 3
+        )
+        key = key.view(key.shape[0], -1, self.n_heads, self.head_dim).permute(
+            0, 2, 1, 3
+        )
+        value = value.view(value.shape[0], -1, self.n_heads, self.head_dim).permute(
+            0, 2, 1, 3
+        )
+
+        # Attention calculation
+        energy = torch.matmul(query, key.permute(0, 1, 3, 2)) / (self.head_dim**0.5)
+        # print("energy's shape is", energy.shape)
+        print("energy's sample1, head1 is", energy[0][0])
+        # IPython.embed()
+        # sys.exit()
+        if mask is not None:
+            energy = energy.masked_fill(mask == 0, float("-1e20"))
+
+        attention = torch.softmax(energy, dim=-1)
+        print("attention's shape is", attention.shape)
+
+        x = torch.matmul(attention, value)
+
+        # Reshape and concatenate
+        x = x.permute(0, 2, 1, 3).contiguous()
+        x = x.view(x.shape[0], -1, self.n_heads * self.head_dim)
+
+        # Final linear layer
+        x = self.fc_out(x)
+
+        return x
+
+
 class EncoderBlock(nn.Module):
     def __init__(self, input_dim, num_heads, dim_feedforward, dropout=0.0):
         """
@@ -92,6 +162,48 @@ class EncoderBlock(nn.Module):
         x = self.norm2(x)
 
         return x
+
+
+class FeedForward(nn.Module):
+    def __init__(self, d_model, d_ff, dropout=0.1):
+        super(FeedForward, self).__init__()
+        self.linear1 = nn.Linear(d_model, d_ff)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(d_ff, d_model)
+
+    def forward(self, x):
+        x = torch.relu(self.linear1(x))
+        x = self.dropout(x)
+        x = self.linear2(x)
+        return x
+
+
+class TransformerBlock(nn.Module):
+    def __init__(self, d_model, n_heads, d_ff, dropout=0.1):
+        super(TransformerBlock, self).__init__()
+        self.attention = MultiHeadAttention(d_model, n_heads)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.dropout = nn.Dropout(dropout)
+
+        self.feed_forward = FeedForward(d_model, d_ff)
+        self.norm2 = nn.LayerNorm(d_model)
+
+    def forward(self, x, mask=None):
+        attention_output = self.attention(x, x, x, mask)
+        print(
+            "shape of attention_output and x_input for transformer block{}, {}".format(
+                attention_output.shape, x.shape
+            )
+        )
+        x = x + self.dropout(attention_output)
+        x = self.norm1(x)
+
+        feed_forward_output = self.feed_forward(x)
+        x = x + self.dropout(feed_forward_output)
+        x = self.norm2(x)
+        print("shape of xoutput in the end of transformer block ", x.shape)
+
+        return x, attention_output
 
 
 class AttentionBranch(nn.Module):
@@ -150,27 +262,32 @@ class AttentionBranch(nn.Module):
             bias=False,
         )
         self.att_edge_bn = nn.BatchNorm2d(num_att_edge * A_size[2])
+        self.transformer_bn = nn.BatchNorm1d(num_features=634)
         self.tanh = nn.Tanh()
         self.relu = nn.ReLU()
 
         # Attention frame pairs
         # frame* frame
-        self.num_att_frame = 2533
-        self.att_frame_conv = nn.Conv2d(
-            num_classes,
-            self.num_att_frame * self.num_att_frame,
-            kernel_size=1,
-            padding=0,
-            stride=1,
-            bias=False,
-        )
-        self.att_frame_bn = nn.BatchNorm2d(self.num_att_frame**2)
+        # self.num_att_frame = 2533
+        # self.att_frame_conv = nn.Conv2d(
+        #     num_classes,
+        #     self.num_att_frame * self.num_att_frame,
+        #     kernel_size=1,
+        #     padding=0,
+        #     stride=1,
+        #     bias=False,
+        # )
+        # self.att_frame_bn = nn.BatchNorm2d(self.num_att_frame**2)
+
+        # Transformer
+        self.transformer1 = TransformerBlock(d_model=1664, n_heads=4, d_ff=128)
+        self.positional_encoding = PositionalEncoding(1000)
 
         # Multi-head self-attention encoder block x1
-        self.multi_head = EncoderBlock(64, 8, 64, dropout=0.2)
+        # self.multi_head = EncoderBlock(64, 8, 64, dropout=0.2)
 
     def forward(self, x, A):
-        print("shape of input X: ", x.shape)
+        print("shape of X after the feature extraction: ", x.shape)
         N, c, T, V = x.size()
 
         # STGC Block
@@ -186,12 +303,19 @@ class AttentionBranch(nn.Module):
 
         # Attention
         x_att = self.att_bn(x)
+        x = x.permute(0, 2, 1, 3).contiguous().flatten(start_dim=2, end_dim=3)
+        print("the x size is: after 3 stgc in Att branch", x.shape)
+        x = self.transformer_bn(x)
+        # IPython.embed()
+
         # self attention
         print("shape of x_att: ", x_att.shape)
-        x_att = x_att.permute(0, 3, 2, 1).contiguous()
+        _, att_mat = self.transformer1(x)
+        print("shape of att_mat: ", att_mat.shape)
+        # x_att = x_att.permute(0, 3, 2, 1).contiguous()
 
-        attn_mtx = self.multi_head(x_att)
-        print("shape of attn_mtx: ", attn_mtx.shape)
+        # attn_mtx = self.multi_head(x_att)
+        # print("shape of attn_mtx: ", attn_mtx.shape)
         x_att = self.att_conv(x_att)
 
         # Attention node
@@ -200,25 +324,29 @@ class AttentionBranch(nn.Module):
         x_node = F.interpolate(x_node, size=(T, V))
         att_node = self.sigmoid(x_node)
         print("attnodes shape are: ", att_node.shape)
-        print("attnodes are: ", att_node)
+        # print("attnodes are: ", att_node)
 
         # Attention edge
+        print("x_att shape are: ", x_att.shape)
         x_edge = F.avg_pool2d(x_att, (x_att.size()[2], 1))
+        print("xedges before conv shape are: ", x_edge.shape)
         x_edge = self.att_edge_conv(x_edge)
+
         x_edge = self.att_edge_bn(x_edge)
+        print("xedges shape are: ", x_edge.shape)
         x_edge = x_edge.view(N, self.num_att_edge, V, V)
         x_edge = self.tanh(x_edge)
         att_edge = self.relu(x_edge)
         print("attedges shape are: ", att_edge.shape)
-        print("attedges are: ", att_edge)
+        # print("attedges are: ", att_edge)
 
         # Attention Frame
-        x_fpair = self.att_node_conv(x_att)
-        x_fpair = self.att_node_bn(x_fpair)
-        x_fpair = F.interpolate(x_fpair, size=(T, T))
-        att_frame = self.sigmoid(x_fpair)
-        print("attframes shape are: ", att_frame.shape)
-        print("attframes are: ", att_frame)
+        # x_fpair = self.att_node_conv(x_att)
+        # x_fpair = self.att_node_bn(x_fpair)
+        # x_fpair = F.interpolate(x_fpair, size=(T, T))
+        # att_frame = self.sigmoid(x_fpair)
+        # print("attframes shape are: ", att_frame.shape)
+        # print("attframes are: ", att_frame)
 
         return output, att_node, att_edge  # , attframe
 
@@ -251,9 +379,12 @@ class FeatureExtractor(nn.Module):
         N, C, T, V = x.size()  # batch, channel, frame, node
         x = x.permute(0, 3, 1, 2).contiguous().view(N, V * C, T)
         x = self.bn(x)
+        print("after batch norm", x.shape)
         x = x.view(N, V, C, T).permute(0, 2, 3, 1).contiguous()
         # STGC Blocks
         x = self.stgc_block1(x, A, None)
         x = self.stgc_block2(x, A, None)
         x = self.stgc_block3(x, A, None)
+
+        print("after feature extractor", x.shape)
         return x

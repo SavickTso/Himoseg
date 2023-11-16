@@ -65,7 +65,8 @@ class STA_GCN(nn.Module):
         self.feature_extractor = Att_branch.FeatureExtractor(f_config, **kwargs)
 
         # Attention branch
-        a_config = [[32, 64, 2], [64, 64, 1], [64, 64, 1]]
+        # a_config = [[32, 64, 2], [64, 64, 1], [64, 64, 1]]
+        a_config = [[32, 64, 1], [64, 64, 1], [64, 32, 1]]
         self.attention_branch = Att_branch.AttentionBranch(
             a_config, num_classes, num_att_edge, **kwargs
         )
@@ -85,7 +86,7 @@ class STA_GCN(nn.Module):
 
         # Attention mechanism
         att_x = feature * att_node
-
+        print("shape of geenral att_x", att_x.shape)
         # Perception branch
         output_pb = self.perception_branch(att_x, self.A, att_edge)
 
@@ -97,6 +98,13 @@ def main():
     NUM_EPOCH = 100
     HOP_SIZE = 2
     NUM_ATT_EDGE = 2  # 動作ごとのattention edgeの生成数
+
+    seed = 42
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.use_deterministic_algorithms = True
 
     # モデルを作成
     model = STA_GCN(
@@ -147,13 +155,14 @@ def main():
         # IPython.embed()
         for batch_idx, (data, label) in enumerate(data_loader["train"]):
             data = data.cuda()
+            print("input size ", data.shape)
             label = label.cuda()
             # print(batch_idx)
             # print(label)
             output_ab, output_pb, _, _ = model(data)
             # print(output_ab.shape)
-            print(output_pb.shape)
-            print(output_pb)
+            # print(output_pb.shape)
+            # print(output_pb)
             loss = criterion(output_ab, label) + criterion(output_pb, label)
             optimizer.zero_grad()
             loss.backward()

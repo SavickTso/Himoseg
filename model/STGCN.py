@@ -110,6 +110,6 @@ class STGC_Block(nn.Module):
             )
 
     def forward(self, x, A, att_edge):
-        print("shape of x in STGC_block", x.shape)
+        # print("shape of x in STGC_block", x.shape)
         x = self.tgc(self.sgc(x, A * self.M, att_edge)) + self.residual(x)
         return x
