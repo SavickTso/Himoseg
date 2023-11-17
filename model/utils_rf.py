@@ -5,6 +5,34 @@ import torch.nn.functional as F
 import numpy as np
 
 
+def eliminate_frames_4d(tensor_4d, desired_length):
+    """For least relative node/frame elimination"""
+    # Sum all frames' values both horizontally and vertically
+    sum_list = (
+        torch.sum(tensor_4d, dim=-1)
+        + torch.sum(tensor_4d, dim=-2)
+        - torch.diagonal(tensor_4d, dim1=-1, dim2=-2)
+    )
+    # keep_indices = torch.tensor(range(100))[~torch.isin(torch.tensor(range(100)), eliminate_indices)]
+    keep_indices = torch.argsort(sum_list)[:, :, -desired_length:]
+    tensor_eliminated = torch.Tensor(
+        tensor_4d.shape[0], tensor_4d.shape[1], desired_length, desired_length
+    ).cuda()
+    # Add : later for dimension format
+    # print("keepindices.shape", keep_indices)
+    for i in range(tensor_4d.shape[0]):
+        for j in range(tensor_4d.shape[1]):
+            # print(keep_indices[i][j])
+            keep_indices[i][j], _ = torch.sort(keep_indices[i][j])
+            # print(keep_indices[i][j])
+
+            tensor_eliminated[i][j] = tensor_4d[i][j][keep_indices[i][j]][
+                :, keep_indices[i][j]
+            ]
+    # print("tensor_eliminated.shape is ", tensor_eliminated.shape)
+    return tensor_eliminated
+
+
 def topk_selection(m_1d, k, t_len):
     """
     Parameters:

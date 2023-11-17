@@ -82,7 +82,7 @@ class MultiHeadAttention(nn.Module):
 
         self.fc_out = nn.Linear(d_model, d_model)
 
-    def forward(self, query, key, value, mask=None):
+    def forward(self, query, key, value, mask=None, desired_portion=0.9):
         # Linear transformations
         query = self.fc_query(query)
         key = self.fc_key(key)
@@ -101,12 +101,16 @@ class MultiHeadAttention(nn.Module):
 
         # Attention calculation
         energy = torch.matmul(query, key.permute(0, 1, 3, 2)) / (self.head_dim**0.5)
-        # print("energy's shape is", energy.shape)
-        print("energy's sample1, head1 is", energy[0][0])
+        # print("energy's sample1, head1 is", energy[0][0])
         # IPython.embed()
         # sys.exit()
         if mask is not None:
             energy = energy.masked_fill(mask == 0, float("-1e20"))
+
+        print("energy shape is ", energy.shape)
+
+        desired_frames = round(desired_portion * energy.shape[-1])
+        energy_clusters = utils_rf.eliminate_frames_4d(energy, desired_frames)
 
         attention = torch.softmax(energy, dim=-1)
         print("attention's shape is", attention.shape)
