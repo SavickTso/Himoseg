@@ -1,9 +1,9 @@
+import IPython
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import IPython
-from model import STGCN
-from model import utils_rf
+
+from model import STGCN, utils_rf
 
 # from utils_rf import scaled_dot_product, expand_mask
 
@@ -49,7 +49,6 @@ class MultiheadAttention(nn.Module):
         self.o_proj.bias.data.fill_(0)
 
     def forward(self, x, mask=None, return_attention=False):
-        print(x.size())
         batch_size, _, seq_length, _ = x.size()
         if mask is not None:
             mask = utils_rf.expand_mask(mask)
@@ -84,6 +83,8 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, query, key, value, mask=None, desired_portion=0.9):
         # Linear transformations
+        print("value's shape is", value.shape)
+
         query = self.fc_query(query)
         key = self.fc_key(key)
         value = self.fc_value(value)
@@ -110,19 +111,25 @@ class MultiHeadAttention(nn.Module):
         print("energy shape is ", energy.shape)
 
         desired_frames = round(desired_portion * energy.shape[-1])
-        energy_clusters = utils_rf.eliminate_frames_4d(energy, desired_frames)
+        energy_clustered = utils_rf.eliminate_frames_4d(energy, desired_frames)
+
+        print("clustered_energy shape is ", energy_clustered.shape)
 
         attention = torch.softmax(energy, dim=-1)
-        print("attention's shape is", attention.shape)
+        print("attention's shape0 is", attention.shape)
+        print("value's shape is", value.shape)
 
         x = torch.matmul(attention, value)
+        print("attention's shape1 is", x.shape)
 
         # Reshape and concatenate
         x = x.permute(0, 2, 1, 3).contiguous()
         x = x.view(x.shape[0], -1, self.n_heads * self.head_dim)
+        print("attention's shape2 is", x.shape)
 
         # Final linear layer
         x = self.fc_out(x)
+        print("attention's shape3 is", x.shape)
 
         return x
 

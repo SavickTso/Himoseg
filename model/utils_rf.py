@@ -1,13 +1,15 @@
 import math
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 
 
 def eliminate_frames_4d(tensor_4d, desired_length):
     """For least relative node/frame elimination"""
     # Sum all frames' values both horizontally and vertically
+    # frame_eliminated = []
     sum_list = (
         torch.sum(tensor_4d, dim=-1)
         + torch.sum(tensor_4d, dim=-2)
@@ -15,6 +17,8 @@ def eliminate_frames_4d(tensor_4d, desired_length):
     )
     # keep_indices = torch.tensor(range(100))[~torch.isin(torch.tensor(range(100)), eliminate_indices)]
     keep_indices = torch.argsort(sum_list)[:, :, -desired_length:]
+    eliminate_indices = torch.argsort(sum_list)[:, :, :-desired_length]
+    print("length of eliminate frames are {}".format(eliminate_indices.shape[2]))
     tensor_eliminated = torch.Tensor(
         tensor_4d.shape[0], tensor_4d.shape[1], desired_length, desired_length
     ).cuda()
