@@ -80,6 +80,9 @@ class MultiHeadAttention(nn.Module):
         self.fc_value = nn.Linear(d_model, d_model)
 
         self.fc_out = nn.Linear(d_model, d_model)
+        self.subaction_fc = nn.Linear(52 * 2536, 20)
+        self.subaction_start_fc = nn.Linear(2536, 634)
+        self.subaction_end_fc = nn.Linear(52, 634)
 
     def forward(self, query, key, value, mask=None, desired_portion=0.9):
         # Linear transformations
@@ -121,6 +124,23 @@ class MultiHeadAttention(nn.Module):
 
         x = torch.matmul(attention, value)
         print("attention's shape1 is", x.shape)
+        # [8, 8, 52*2536] to [8, 8, 20]
+        x_sub = torch.flatten(x, start_dim=2)
+        x_subpred = self.subaction_fc(x_sub)  # classification result
+        print("subpred shape is", x_subpred.shape)
+
+        # ADD softmmax
+        print("attention's shape1 is", x.shape)
+
+        x_sub = self.subaction_start_fc(x)
+        x_sub = x_sub.permute(0, 1, 3, 2).contiguous()
+        x_sub = self.subaction_end_fc(x_sub)
+        print("subaction start end shape is", x_sub.shape)
+
+        # [8, 8, 52*2536] to [8, 8, 634, 634]
+        # [8, 8, 20, 2536]
+
+        # (8, 8, 52, 4len) to (8, 8, numsubmotion, len, len)
 
         # Reshape and concatenate
         x = x.permute(0, 2, 1, 3).contiguous()
@@ -273,7 +293,7 @@ class AttentionBranch(nn.Module):
             bias=False,
         )
         self.att_edge_bn = nn.BatchNorm2d(num_att_edge * A_size[2])
-        self.transformer_bn = nn.BatchNorm1d(num_features=634)
+        self.transformer_bn = nn.BatchNorm1d(num_features=52)
         self.tanh = nn.Tanh()
         self.relu = nn.ReLU()
 
@@ -291,8 +311,8 @@ class AttentionBranch(nn.Module):
         # self.att_frame_bn = nn.BatchNorm2d(self.num_att_frame**2)
 
         # Transformer
-        self.transformer1 = TransformerBlock(d_model=1664, n_heads=4, d_ff=128)
-        self.positional_encoding = PositionalEncoding(1000)
+        self.positional_encoding = PositionalEncoding(20288)
+        self.transformer1 = TransformerBlock(d_model=20288, n_heads=8, d_ff=128)
 
         # Multi-head self-attention encoder block x1
         # self.multi_head = EncoderBlock(64, 8, 64, dropout=0.2)
@@ -314,15 +334,17 @@ class AttentionBranch(nn.Module):
 
         # Attention
         x_att = self.att_bn(x)
-        x = x.permute(0, 2, 1, 3).contiguous().flatten(start_dim=2, end_dim=3)
+        x = x.permute(0, 3, 1, 2).contiguous().flatten(start_dim=2, end_dim=3)
         print("the x size is: after 3 stgc in Att branch", x.shape)
         x = self.transformer_bn(x)
         # IPython.embed()
 
         # self attention
         print("shape of x_att: ", x_att.shape)
-        _, att_mat = self.transformer1(x)
+        trans_x = self.positional_encoding(x)
+        trans_x, att_mat = self.transformer1(trans_x)
         print("shape of att_mat: ", att_mat.shape)
+        print("shape of trans_x", trans_x.shape)
         # x_att = x_att.permute(0, 3, 2, 1).contiguous()
 
         # attn_mtx = self.multi_head(x_att)
