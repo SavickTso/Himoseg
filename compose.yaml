@@ -1,6 +1,6 @@
 version: '3'
 services:
-  trainhis:
+  train:
     image: hisrepeat:latest
     volumes:
       - ~/implements/HisRepItself/:/workspace/HisRepItself/
