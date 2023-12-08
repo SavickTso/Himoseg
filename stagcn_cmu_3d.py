@@ -1,20 +1,20 @@
-from utils import amass as datasets
-from model import Graph, Percep_branch, STGCN, Att_branch
-from utils.opt import Options
-from utils import util
-from utils import log
+import os
+import time
 
+import h5py
 import IPython
-from torch.utils.data import DataLoader, random_split
-import torch
-import torch.nn as nn
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import os
-import matplotlib.pyplot as plt
-import time
-import h5py
+import torch
+import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader, random_split
+
+from model import STGCN, Att_branch, Graph, Percep_branch
+from utils import amass as datasets
+from utils import log, util
+from utils.opt import Options
 
 
 class Feeder(torch.utils.data.Dataset):
@@ -153,10 +153,11 @@ def main():
         correct_pb = 0
         sum_loss = 0
         # IPython.embed()
-        for batch_idx, (data, label) in enumerate(data_loader["train"]):
+        for batch_idx, (data, label, sublabel) in enumerate(data_loader["train"]):
             data = data.cuda()
             print("input size ", data.shape)
             label = label.cuda()
+            sublabel = sublabel.cuda()
             # print(batch_idx)
             # print(label)
             output_ab, output_pb, _, _ = model(data)

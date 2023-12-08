@@ -1,18 +1,21 @@
-import pandas as pd
-from torch.utils.data import Dataset
-import numpy as np
-from h5py import File
-import sys
-import scipy.io as sio
-from utils import data_utils
-from matplotlib import pyplot as plt
-import torch
+import json
 import os
 import re
+import sys
+from os.path import join as ospj
+
 import IPython
-from utils import ang2joint
-from torch.nn.utils.rnn import pad_sequence
+import numpy as np
+import pandas as pd
+import scipy.io as sio
+import torch
+from h5py import File
+from matplotlib import pyplot as plt
 from sklearn.preprocessing import LabelEncoder
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import Dataset
+
+from utils import ang2joint, data_utils
 
 EXCLUDE_CLASS_LIST = [
     "bicep_curls_rm",
@@ -60,6 +63,52 @@ def custom_collate(batch):
     return padded_data
 
 
+def load_babel():
+    d_folder = "babel_v1.0_release"  # Data folder
+    l_babel_dense_files = ["train", "val", "test"]
+    l_babel_extra_files = ["extra_train", "extra_val"]
+
+    # BABEL Dataset
+    babel = {}
+    for file in l_babel_dense_files:
+        babel[file] = json.load(open(ospj(d_folder, file + ".json")))
+
+    for file in l_babel_extra_files:
+        babel[file] = json.load(open(ospj(d_folder, file + ".json")))
+
+    return babel
+
+
+def get_submotion_frame_range_test(babel_split, motion_featp_str, motion_len_frame):
+    sublabel = []
+    sublabel_seg = []
+    for clip in babel_split:
+        if babel_split[clip]["feat_p"] == motion_featp_str:
+            if babel_split[clip]["frame_ann"] == None:
+                return [babel_split[clip]["seq_ann"]["labels"][0]["proc_label"]], [
+                    0,
+                    motion_len_frame,
+                ]
+            for submotion in babel_split[clip]["frame_ann"]["labels"]:
+                sublabel.append(submotion["proc_label"])
+                start = round(
+                    motion_len_frame * submotion["start_t"] / babel_split[clip]["dur"]
+                )
+                end = round(
+                    motion_len_frame * submotion["end_t"] / babel_split[clip]["dur"]
+                )
+                sublabel_seg.append([start, end])
+            break
+    # Sort the list based on the second element of each tuple
+    sorted_list = sorted(sublabel_seg, key=lambda x: x[0])
+    sorted_label_list = [
+        sublabel[i]
+        for i in sorted(range(len(sublabel_seg)), key=lambda k: sublabel_seg[k][0])
+    ]
+
+    return sorted_label_list, sorted_list
+
+
 class Datasets(Dataset):
     def __init__(self, actions=None):
         """
@@ -81,6 +130,7 @@ class Datasets(Dataset):
         self.data_idx = []
         self.joint_used = np.arange(4, 22)
         # seq_len = self.in_n + self.out_n
+        self.babel = load_babel()
         labels = np.load("./movilabels.npy")
 
         pattern = r"Subject_(\d+)_F_(\d+)_poses.npz"
@@ -115,10 +165,11 @@ class Datasets(Dataset):
                 fn = poses.shape[0]
 
                 ### start of down sample
-                sample_rate = int(frame_rate // 25)
-                fn, poses = motion_downsample(fn, poses, sample_rate)
+                # sample_rate = int(frame_rate // 25)
+                # fn, poses = motion_downsample(fn, poses, sample_rate)
                 ### end of down sample
-
+                print("processing {}".format(ds + "/" + sub + "/" + act))
+                sub_key = ds + "/" + sub + "/" + act
                 poses = torch.from_numpy(poses).float().cuda()
                 poses = poses.reshape([fn, -1, 3])
                 # remove global rotation
@@ -151,6 +202,16 @@ class Datasets(Dataset):
                     )
 
                 self.p3d.append(p3d.cpu().data.numpy())
+                featpstr = "BMLmovi/" + ds + "/" + sub + "/" + act
+                print("featpstr is", featpstr)
+                print("shape of current clip is", p3d.cpu().data.numpy().shape)
+                motion_len = p3d.cpu().data.numpy().shape[0]
+                sublabel, sublabel_seg = get_submotion_frame_range_test(
+                    self.babel["train"], featpstr, motion_len
+                )
+                print(sublabel)
+                print(sublabel_seg)
+
                 # tmp_data_idx_1 = [n] * len(valid_frames)
                 # tmp_data_idx_2 = list(valid_frames)
                 # self.data_idx.extend(zip(tmp_data_idx_1, tmp_data_idx_2))
@@ -193,4 +254,5 @@ class Datasets(Dataset):
         # fs = np.arange(start_frame, start_frame + self.in_n + self.out_n)
         data = self.data[item]
         label = self.numeric_labels[item]
-        return data, label  # [fs]  # , key
+        sublabel = torch.tensor([])
+        return data, label, sublabel  # [fs]  # , key
