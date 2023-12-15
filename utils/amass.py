@@ -148,6 +148,7 @@ class Datasets(Dataset):
             print(ds)
             sys.exit()
         print(">>> loading {}".format(ds))
+        babel_empty_count = 0
         for sub in os.listdir(self.path_to_data + ds):
             if not os.path.isdir(self.path_to_data + ds + "/" + sub):
                 continue
@@ -176,19 +177,7 @@ class Datasets(Dataset):
                 poses[:, 0] = 0
                 p3d0_tmp = p3d0.repeat([fn, 1, 1])
                 p3d = ang2joint.ang2joint(p3d0_tmp, poses, parent)
-                # p3d_pad = pad_sequence(p3d, batch_first=True)
-                # print("for act {}, the shape of p3d is {}".format(act, p3d.shape))
-                # self.p3d[(ds, sub, act)] = p3d.cpu().data.numpy()
-                # valid_frames = np.arange(0, fn, skip_rate)
-
-                # # tmp_data_idx_1 = [(ds, sub, act)] * len(valid_frames)
-                # print("extracted number in this act", act)
-
                 match = re.search(pattern, act)
-                # print(int(match.group(1)), "   ", int(match.group(2)))
-
-                ### skip classes that have less than 5 samples
-
                 if int(match.group(2)) == 22:
                     self.keys.append("scratching_head")
                 elif (
@@ -206,9 +195,17 @@ class Datasets(Dataset):
                 print("featpstr is", featpstr)
                 print("shape of current clip is", p3d.cpu().data.numpy().shape)
                 motion_len = p3d.cpu().data.numpy().shape[0]
-                sublabel, sublabel_seg = get_submotion_frame_range_test(
-                    self.babel["train"], featpstr, motion_len
-                )
+
+                datasets_splits = ["train", "val", "test"]
+                for dataset_split in datasets_splits:
+                    sublabel, sublabel_seg = get_submotion_frame_range_test(
+                        self.babel[dataset_split], featpstr, motion_len
+                    )
+                    if len(sublabel) > 0:
+                        break
+                else:
+                    # This block is executed if the loop completes without encountering a break
+                    babel_empty_count += 1
                 print(sublabel)
                 print(sublabel_seg)
 
@@ -217,7 +214,7 @@ class Datasets(Dataset):
                 # self.data_idx.extend(zip(tmp_data_idx_1, tmp_data_idx_2))
                 # n += 1
         # self.data = self.p3d
-
+        print("babel_empty_count is", babel_empty_count)
         self.data = pad_sequence(
             [torch.tensor(arr) for arr in self.p3d], batch_first=True
         )
