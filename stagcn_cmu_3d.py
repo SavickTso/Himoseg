@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 
 import h5py
@@ -146,6 +147,7 @@ def main():
         pin_memory=False,
     )
 
+    # sys.exit()
     model.train()
     print(model)
     # 学習開始
@@ -159,7 +161,8 @@ def main():
             label = label.cuda()
             sublabel = sublabel.cuda()
             # print(batch_idx)
-            # print(label)
+            print("label shape", label.shape)
+            print("sublabel shape", sublabel)
             output_ab, output_pb, _, _ = model(data)
             # print(output_ab.shape)
             # print(output_pb.shape)
