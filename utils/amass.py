@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 import sys
@@ -6,7 +7,6 @@ from os.path import join as ospj
 
 import IPython
 import numpy as np
-import pandas as pd
 import scipy.io as sio
 import torch
 from h5py import File
@@ -126,6 +126,7 @@ class Datasets(Dataset):
         # self.sample_rate = opt.sample_rate
         self.p3d = []
         self.sublabels = []
+        self.sublabel_segs = []
         self.keys = []
         self.data_idx = []
         self.joint_used = np.arange(4, 22)
@@ -134,7 +135,7 @@ class Datasets(Dataset):
         labels = np.load("./movilabels.npy")
 
         pattern = r"Subject_(\d+)_F_(\d+)_poses.npz"
-
+        sublabel_length_distribution = []
         skel = np.load("./body_models/smpl_skeleton.npz")
         p3d0 = torch.from_numpy(skel["p3d0"]).float().cuda()
         parents = skel["parents"]
@@ -179,12 +180,14 @@ class Datasets(Dataset):
                 featpstr = "BMLmovi/" + ds + "/" + sub + "/" + act
                 motion_len = p3d.cpu().data.numpy().shape[0]
 
-                datasets_splits = ["train", "val", "test"]
+                datasets_splits = ["train", "val"]
                 for dataset_split in datasets_splits:
                     sublabel, sublabel_seg = get_submotion_frame_range_test(
                         self.babel[dataset_split], featpstr, motion_len
                     )
-                    if len(sublabel) > 0:
+                    if 0 < len(sublabel) <= 12:
+                        if not isinstance(sublabel_seg[0], list):
+                            sublabel_seg = [sublabel_seg]
                         break
                 else:
                     # This block is executed if the loop completes without encountering a break
@@ -206,7 +209,9 @@ class Datasets(Dataset):
                     self.keys.append(
                         labels[int(match.group(1)) - 1][int(match.group(2)) - 1]
                     )
-                self.sublabels.append([sublabel, sublabel_seg])
+                sublabel_length_distribution.append(len(sublabel))
+                self.sublabels.append(sublabel)
+                self.sublabel_segs.append(sublabel_seg)
                 self.p3d.append(p3d.cpu().data.numpy())
 
                 # tmp_data_idx_1 = [n] * len(valid_frames)
@@ -214,21 +219,33 @@ class Datasets(Dataset):
                 # self.data_idx.extend(zip(tmp_data_idx_1, tmp_data_idx_2))
                 # n += 1
         # self.data = self.p3d
-        flattened_sublabel = [item for sublist in self.sublabels for item in sublist[0]]
+        flattened_sublabel = [item for sublist in self.sublabels for item in sublist]
         label_encoder1 = LabelEncoder()
         numeric_labels = label_encoder1.fit_transform(flattened_sublabel)
 
         # Reshape the numeric labels back to the original structure
         numeric_labels_per_list = [
-            numeric_labels[i : i + len(sublist[0])]
+            numeric_labels[i : i + len(sublist)]
             for i, sublist in enumerate(self.sublabels)
         ]
 
         # Now numeric_labels_per_list contains the numeric labels for each sublist
         print("numeric sublabels length", len(numeric_labels_per_list))
-        max_length = max(len(sublist) for sublist in numeric_labels_per_list)
-        print("Maximum length of sublists:", max_length)
-        self.sublabels = torch.tensor(numeric_labels_per_list).float().cuda()
+        print(
+            "the average sublabel number in one sample is: ",
+            avg_sublabellen := sum(sublabel_length_distribution)
+            / len(sublabel_length_distribution),
+        )
+        IPython.embed()
+        # self.sublabel_segs = torch.tensor(self.sublabel_segs).float().cuda()
+        self.sublabel_segs = pad_sequence(
+            [torch.tensor(arr).cuda() for arr in self.sublabel_segs],
+            batch_first=True,
+        )
+        self.sublabels = pad_sequence(
+            [torch.tensor(arr).cuda() for arr in numeric_labels_per_list],
+            batch_first=True,
+        )
         print("babel_empty_count is", babel_empty_count)
         self.data = pad_sequence(
             [torch.tensor(arr) for arr in self.p3d], batch_first=True
@@ -265,9 +282,8 @@ class Datasets(Dataset):
         return self
 
     def __getitem__(self, item):
-        # key, start_frame = self.data_idx[item]
-        # fs = np.arange(start_frame, start_frame + self.in_n + self.out_n)
         data = self.data[item]
         label = self.numeric_labels[item]
         sublabel = self.sublabels[item]
-        return data, label, sublabel  # [fs]  # , key
+        sublabel_seg = self.sublabel_segs[item]
+        return data, label, sublabel, sublabel_seg

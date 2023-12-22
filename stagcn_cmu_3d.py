@@ -155,11 +155,14 @@ def main():
         correct_pb = 0
         sum_loss = 0
         # IPython.embed()
-        for batch_idx, (data, label, sublabel) in enumerate(data_loader["train"]):
+        for batch_idx, (data, label, sublabel, sublabel_seg) in enumerate(
+            data_loader["train"]
+        ):
             data = data.cuda()
             print("input size ", data.shape)
             label = label.cuda()
             sublabel = sublabel.cuda()
+            sublabel_seg = sublabel_seg.cuda()
             # print(batch_idx)
             print("label shape", label.shape)
             print("sublabel shape", sublabel)
