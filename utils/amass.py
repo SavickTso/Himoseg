@@ -236,7 +236,6 @@ class Datasets(Dataset):
             avg_sublabellen := sum(sublabel_length_distribution)
             / len(sublabel_length_distribution),
         )
-        IPython.embed()
         # self.sublabel_segs = torch.tensor(self.sublabel_segs).float().cuda()
         self.sublabel_segs = pad_sequence(
             [torch.tensor(arr).cuda() for arr in self.sublabel_segs],

@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
+from torchsummary import summary
 
 from model import STGCN, Att_branch, Graph, Percep_branch
 from utils import amass as datasets
@@ -107,22 +108,6 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.use_deterministic_algorithms = True
 
-    # モデルを作成
-    model = STA_GCN(
-        num_classes=23,
-        in_channels=3,
-        t_kernel_size=17,  # original 9, 時間グラフ畳み込みのカーネルサイズ (t_kernel_size × 1)
-        hop_size=HOP_SIZE,
-        num_att_edge=NUM_ATT_EDGE,
-    ).cuda()
-
-    # オプティマイザ
-    # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.5)
-    # use Adam
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    # 誤差関数
-    criterion = torch.nn.CrossEntropyLoss()
-
     # データセットの用意
     data_loader = dict()
     dataset = datasets.Datasets()
@@ -146,11 +131,26 @@ def main():
         num_workers=0,
         pin_memory=False,
     )
+    max_len = data_loader["test"].sampler.data_source.dataset.data.shape[2]
 
-    # sys.exit()
+    # モデルを作成
+    model = STA_GCN(
+        num_classes=23,
+        in_channels=3,
+        t_kernel_size=17,  # original 9, 時間グラフ畳み込みのカーネルサイズ (t_kernel_size × 1)
+        hop_size=HOP_SIZE,
+        num_att_edge=NUM_ATT_EDGE,
+    ).cuda()
+
+    # オプティマイザ
+    # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.5)
+    # use Adam
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    # 誤差関数
+    criterion = torch.nn.CrossEntropyLoss()
     model.train()
-    print(model)
-    # 学習開始
+    summary(model, (3, 617, 52))
+    # print(model)
     for epoch in range(1, NUM_EPOCH + 1):
         correct_pb = 0
         sum_loss = 0

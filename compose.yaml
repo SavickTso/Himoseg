@@ -6,7 +6,7 @@ services:
       - ~/implements/HisRepItself/:/workspace/HisRepItself/
       - ~/dataset/.:/workspace/HisRepItself/datasets/
     working_dir: /workspace/HisRepItself/
-    command: python3 stagcn_cmu_3d.py
+    command: ["/bin/bash", "-c", "pip install torchsummary && python3 stagcn_cmu_3d.py"]
     deploy:
       resources:
         reservations:
