@@ -1,9 +1,12 @@
+import json
+import math
 import os
 import re
+import sys
+from os.path import join as ospj
 
 import IPython
 import numpy as np
-import pandas as pd
 import scipy.io as sio
 import torch
 from h5py import File
@@ -60,8 +63,53 @@ def custom_collate(batch):
     return padded_data
 
 
+def load_babel():
+    d_folder = "babel_v1.0_release"  # Data folder
+    l_babel_dense_files = ["train", "val", "test"]
+    l_babel_extra_files = ["extra_train", "extra_val"]
+
+    # BABEL Dataset
+    babel = {}
+    for file in l_babel_dense_files:
+        babel[file] = json.load(open(ospj(d_folder, file + ".json")))
+
+    for file in l_babel_extra_files:
+        babel[file] = json.load(open(ospj(d_folder, file + ".json")))
+
+    return babel
+
+
+def get_submotion_frame_range_test(babel_split, motion_featp_str, motion_len_frame):
+    sublabel = []
+    sublabel_seg = []
+    for clip in babel_split:
+        if babel_split[clip]["feat_p"] == motion_featp_str:
+            if babel_split[clip]["frame_ann"] == None:
+                return [babel_split[clip]["seq_ann"]["labels"][0]["proc_label"]], [
+                    0,
+                    motion_len_frame,
+                ]
+            for submotion in babel_split[clip]["frame_ann"]["labels"]:
+                sublabel.append(submotion["proc_label"])
+                start = round(
+                    motion_len_frame * submotion["start_t"] / babel_split[clip]["dur"]
+                )
+                end = round(
+                    motion_len_frame * submotion["end_t"] / babel_split[clip]["dur"]
+                )
+                sublabel_seg.append([start, end])
+            break
+    # Sort the list based on the second element of each tuple
+    sorted_list = sorted(sublabel_seg, key=lambda x: x[0])
+    sorted_label_list = [
+        sublabel[i]
+        for i in sorted(range(len(sublabel_seg)), key=lambda k: sublabel_seg[k][0])
+    ]
+    return sorted_label_list, sorted_list
+
+
 class Datasets(Dataset):
-    def __init__(self):
+    def __init__(self, actions=None):
         """
         :param path_to_data:
         :param actions:
@@ -77,14 +125,17 @@ class Datasets(Dataset):
         # self.out_n = opt.output_n
         # self.sample_rate = opt.sample_rate
         self.p3d = []
+        self.sublabels = []
+        self.sublabel_segs = []
         self.keys = []
         self.data_idx = []
         self.joint_used = np.arange(4, 22)
         # seq_len = self.in_n + self.out_n
+        self.babel = load_babel()
         labels = np.load("./movilabels.npy")
 
         pattern = r"Subject_(\d+)_F_(\d+)_poses.npz"
-
+        sublabel_length_distribution = []
         skel = np.load("./body_models/smpl_skeleton.npz")
         p3d0 = torch.from_numpy(skel["p3d0"]).float().cuda()
         parents = skel["parents"]
@@ -96,8 +147,9 @@ class Datasets(Dataset):
         ds = "BMLmovi"
         if not os.path.isdir(self.path_to_data + ds):
             print(ds)
-            exit
+            sys.exit()
         print(">>> loading {}".format(ds))
+        babel_empty_count = 0
         for sub in os.listdir(self.path_to_data + ds):
             if not os.path.isdir(self.path_to_data + ds + "/" + sub):
                 continue
@@ -115,29 +167,37 @@ class Datasets(Dataset):
                 fn = poses.shape[0]
 
                 ### start of down sample
-                # sample_rate = int(frame_rate // 25)
-                # fn, poses = motion_downsample(fn, poses, sample_rate)
+                sample_rate = int(frame_rate // 25)
+                fn, poses = motion_downsample(fn, poses, sample_rate)
                 ### end of down sample
-
+                sub_key = ds + "/" + sub + "/" + act
                 poses = torch.from_numpy(poses).float().cuda()
                 poses = poses.reshape([fn, -1, 3])
                 # remove global rotation
                 poses[:, 0] = 0
                 p3d0_tmp = p3d0.repeat([fn, 1, 1])
                 p3d = ang2joint.ang2joint(p3d0_tmp, poses, parent)
-                # p3d_pad = pad_sequence(p3d, batch_first=True)
-                # print("for act {}, the shape of p3d is {}".format(act, p3d.shape))
-                # self.p3d[(ds, sub, act)] = p3d.cpu().data.numpy()
-                # valid_frames = np.arange(0, fn, skip_rate)
+                featpstr = "BMLmovi/" + ds + "/" + sub + "/" + act
+                motion_len = p3d.cpu().data.numpy().shape[0]
 
-                # # tmp_data_idx_1 = [(ds, sub, act)] * len(valid_frames)
-                # print("extracted number in this act", act)
+                datasets_splits = ["train", "val"]
+                for dataset_split in datasets_splits:
+                    sublabel, sublabel_seg = get_submotion_frame_range_test(
+                        self.babel[dataset_split], featpstr, motion_len
+                    )
+                    if 0 < len(sublabel) <= 12:
+                        if not isinstance(sublabel_seg[0], list):
+                            sublabel_seg = [sublabel_seg]
+                        break
+                else:
+                    # This block is executed if the loop completes without encountering a break
+                    babel_empty_count += 1
+                    # skip this sample if no sublabel is found
+                    continue
 
+                # print(sublabel)
+                # print(sublabel_seg)
                 match = re.search(pattern, act)
-                # print(int(match.group(1)), "   ", int(match.group(2)))
-
-                ### skip classes that have less than 5 samples
-
                 if int(match.group(2)) == 22:
                     self.keys.append("scratching_head")
                 elif (
@@ -149,25 +209,59 @@ class Datasets(Dataset):
                     self.keys.append(
                         labels[int(match.group(1)) - 1][int(match.group(2)) - 1]
                     )
-
+                sublabel_length_distribution.append(len(sublabel))
+                self.sublabels.append(sublabel)
+                self.sublabel_segs.append(sublabel_seg)
                 self.p3d.append(p3d.cpu().data.numpy())
+
                 # tmp_data_idx_1 = [n] * len(valid_frames)
                 # tmp_data_idx_2 = list(valid_frames)
                 # self.data_idx.extend(zip(tmp_data_idx_1, tmp_data_idx_2))
                 # n += 1
         # self.data = self.p3d
+        flattened_sublabel = [item for sublist in self.sublabels for item in sublist]
+        label_encoder1 = LabelEncoder()
+        numeric_labels = label_encoder1.fit_transform(flattened_sublabel)
 
+        # Reshape the numeric labels back to the original structure
+        numeric_labels_per_list = [
+            numeric_labels[i : i + len(sublist)]
+            for i, sublist in enumerate(self.sublabels)
+        ]
+
+        # Now numeric_labels_per_list contains the numeric labels for each sublist
+        print("numeric sublabels length", len(numeric_labels_per_list))
+        print(
+            "the average sublabel number in one sample is: ",
+            avg_sublabellen := sum(sublabel_length_distribution)
+            / len(sublabel_length_distribution),
+        )
+        # self.sublabel_segs = torch.tensor(self.sublabel_segs).float().cuda()
+        self.sublabel_segs = pad_sequence(
+            [torch.tensor(arr).cuda() for arr in self.sublabel_segs],
+            batch_first=True,
+        )
+        self.sublabels = pad_sequence(
+            [torch.tensor(arr).cuda() for arr in numeric_labels_per_list],
+            batch_first=True,
+        )
+        print("babel_empty_count is", babel_empty_count)
         self.data = pad_sequence(
             [torch.tensor(arr) for arr in self.p3d], batch_first=True
         )
+        print("self.data's shape before transpose:", self.data.shape)
         self.data = torch.einsum("nctw->nwct", self.data)
-        N, D, T, J = self.data.shape
-        self.data = self.data.reshape(N, T, D * J)
-        print(self.data.shape)
+        # self.data = (
+        #     self.data.permute(0, 2, 1, 3).contiguous().flatten(start_dim=2, end_dim=3)
+        # )
+        # self.data = self.data.flatten(start_dim=2, end_dim=3)
         print("self.data's shape after transpose:", self.data.shape)
+        print("self.sublabels' shape:", self.sublabels.shape)
+        print("self.sublabels' shape:", len(self.sublabels))
         string_labels = self.keys
         label_encoder = LabelEncoder()
         self.numeric_labels = label_encoder.fit_transform(string_labels)
+        print("self.numeric_labels' shape:", self.numeric_labels.shape)
         print(label_encoder.classes_, len(label_encoder.classes_))
         # IPython.embed()
         # print(self.numeric_labels)
@@ -187,8 +281,8 @@ class Datasets(Dataset):
         return self
 
     def __getitem__(self, item):
-        # key, start_frame = self.data_idx[item]
-        # fs = np.arange(start_frame, start_frame + self.in_n + self.out_n)
         data = self.data[item]
         label = self.numeric_labels[item]
-        return data, label  # [fs]  # , key
+        sublabel = self.sublabels[item]
+        sublabel_seg = self.sublabel_segs[item]
+        return data, label, sublabel, sublabel_seg

@@ -130,3 +130,6 @@ dmypy.json
 
 .idea/
 datasets/
+
+# Pickle dataset files
+*.pkl

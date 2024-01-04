@@ -1,15 +1,18 @@
+import math
+import os
+import sys
+import time
+from sys import exit
+
+import IPython
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-import time
-import IPython
-from model import utils_rf
-import math
-import os, sys
-from sys import exit
-from utils import amass as datasets
 from torch.utils.data import DataLoader, random_split
+
+from model import utils_rf
+from utils import amass as datasets
 
 
 class MultiHeadAttention(nn.Module):
@@ -65,7 +68,7 @@ class MultiHeadAttention(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_len=634):
+    def __init__(self, d_model, max_len=2533):
         super(PositionalEncoding, self).__init__()
         position = torch.arange(0, max_len).unsqueeze(1).float().cuda()
         div_term = torch.exp(
@@ -106,6 +109,7 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x, mask):
         attention_output = self.attention(x, x, x, mask)
+        print("shape of attention_output", attention_output.shape)
         x = x + self.dropout(attention_output)
         x = self.norm1(x)
 
@@ -153,13 +157,13 @@ torch.use_deterministic_algorithms = True
 
 # Example usage:
 sample_number = 32
-sequence_length = 634
+sequence_length = 2533
 data_dimension = 64
 d_model = 156
 n_heads = 4
 d_ff = 128
 num_blocks = 2
-max_len = 634
+max_len = 2533
 num_classes = 23
 dropout = 0.1
 BATCH_SIZE = 8

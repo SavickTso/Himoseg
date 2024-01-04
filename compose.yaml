@@ -14,3 +14,31 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+  transformer:
+    image: hisrepeat:latest
+    volumes:
+      - ~/implements/HisRepItself/:/workspace/HisRepItself/
+      - ~/dataset/.:/workspace/HisRepItself/datasets/
+    working_dir: /workspace/HisRepItself/
+    command: ["/bin/bash", "-c", "pip install torchsummary && python3 transformer++.py"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+  transformer-gpt:
+    image: hisrepeat:latest
+    volumes:
+      - ~/implements/HisRepItself/:/workspace/HisRepItself/
+      - ~/dataset/.:/workspace/HisRepItself/datasets/
+    working_dir: /workspace/HisRepItself/
+    command: ["/bin/bash", "-c", "pip install torchsummary && python3 gpt_transformer.py"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
