@@ -160,79 +160,14 @@ class SelfAttention(nn.Module):
         scores = F.softmax(scores.float(), dim=-1).type_as(xq)
 
         # (m, n_heads, seq_len_q, seq_len) @ (m, n_heads, seq_len, head_dim) -> (m, n_heads, seq_len_q, head_dim)
-        output = torch.matmul(scores, values)
+        scores = torch.matmul(scores, values)
+        # print("SDPA output shape ", scores.shape)
 
         # ((m, n_heads, seq_len_q, head_dim) -> (m, seq_len_q, dim)
-        output = output.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
+        output = scores.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
 
         # (m, seq_len_q, dim)
-        return self.wo(output)
-
-
-class SimpleSelfAttention(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-
-        self.n_heads = config["n_heads"]
-        self.dim = config["embed_dim"]
-        self.n_heads_q = self.n_heads
-        self.head_dim = self.dim // self.n_heads
-
-        self.wq = nn.Linear(self.dim, self.dim, bias=False)
-        self.wk = nn.Linear(self.dim, self.dim, bias=False)
-        self.wv = nn.Linear(self.dim, self.dim, bias=False)
-
-    def forward(self, x, start_pos, freqs_complex):
-        # seq_len is always 1 during inference
-        batch_size, seq_len, _ = x.shape
-
-        # (m, seq_len, dim)
-        xq = self.wq(x)
-
-        # (m, seq_len, h_kv * head_dim)
-        xk = self.wk(x)
-        xv = self.wv(x)
-        # (m, seq_len, n_heads, head_dim)
-        xq = xq.view(batch_size, seq_len, self.n_heads_q, self.head_dim)
-
-        # (m, seq_len, h_kv, head_dim)
-        xk = xk.view(batch_size, seq_len, self.n_kv_heads, self.head_dim)
-        xv = xv.view(batch_size, seq_len, self.n_kv_heads, self.head_dim)
-
-        # (m, seq_len, num_head, head_dim)
-        xq = apply_rotary_embeddings(xq, freqs_complex, device=x.device)
-
-        # (m, seq_len, h_kv, head_dim)
-        xk = apply_rotary_embeddings(xk, freqs_complex, device=x.device)
-
-        # (m, seq_len, h_kv, head_dim)
-        keys, values = xk, xv
-        # (m, seq_len, h_kv, head_dim) --> (m, seq_len, n_heads, head_dim)
-        keys = repeat_kv(keys, self.n_rep)
-        values = repeat_kv(values, self.n_rep)
-
-        # (m, n_heads, seq_len, head_dim)
-        # seq_len is 1 for xq during inference
-        xq = xq.transpose(1, 2)
-
-        # (m, n_heads, seq_len, head_dim)
-        keys = keys.transpose(1, 2)
-        values = values.transpose(1, 2)
-
-        # (m, n_heads, seq_len_q, head_dim) @ (m, n_heads, head_dim, seq_len) -> (m, n_heads, seq_len_q, seq_len)
-        scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
-
-        # (m, n_heads, seq_len_q, seq_len)
-        scores = F.softmax(scores.float(), dim=-1).type_as(xq)
-
-        # (m, n_heads, seq_len_q, seq_len) @ (m, n_heads, seq_len, head_dim) -> (m, n_heads, seq_len_q, head_dim)
-        output = torch.matmul(scores, values)
-
-        # ((m, n_heads, seq_len_q, head_dim) -> (m, seq_len_q, dim)
-        output = output.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
-
-        # (m, seq_len_q, dim)
-        return self.wo(output)
+        return self.wo(output), scores
 
 
 def sigmoid(x, beta=1):
@@ -294,16 +229,20 @@ class DecoderBlock(nn.Module):
 
     def forward(self, x, start_pos, freqs_complex):
         # (m, seq_len, dim)
-        h = x + self.attention.forward(self.attention_norm(x), start_pos, freqs_complex)
+        att_output, att_scores = self.attention.forward(
+            self.attention_norm(x), start_pos, freqs_complex
+        )
+        h = x + att_output
         # (m, seq_len, dim)
         out = h + self.feed_forward.forward(self.ffn_norm(h))
-        return out
+        return out, att_scores
 
 
 class Transformer(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.n_layers = config["n_layers"]
+        self.n_heads = config["n_heads"]
         self.head_dim = config["embed_dim"] // config["n_heads"]
         self.num_classes = config["num_classes"]
         self.layers = nn.ModuleList()
@@ -316,10 +255,18 @@ class Transformer(nn.Module):
         self.freqs_complex = precompute_theta_pos_frequencies(
             self.head_dim, config["max_seq_len"] * 2, device=(config["device"])
         )
+        self.sublabel_fc1 = nn.Linear(
+            config["max_seq_len"] * self.head_dim, config["max_seq_len"], bias=False
+        )
+        self.sublabel_fc2 = nn.Linear(
+            config["max_seq_len"], config["max_seq_len"], bias=False
+        )
+        self.sublabel_fc3 = nn.Linear(
+            config["max_seq_len"], config["num_subclasses"], bias=False
+        )
 
     def forward(self, tokens, start_pos):
         # (m, seq_len)
-
         batch_size, seq_len, d = tokens.shape
 
         # (m, seq_len) -> (m, seq_len, embed_dim)
@@ -331,26 +278,32 @@ class Transformer(nn.Module):
         # Consecutively apply all the encoder layers
         # (m, seq_len, dim)
         for layer in self.layers:
-            h = layer(h, start_pos, freqs_complex)
+            h, att_score = layer(h, start_pos, freqs_complex)
         h = h.mean(dim=1)
         h = self.norm(h)
 
         # (m, seq_len, vocab_size)
         output = self.output(h).float()
 
+        att_score = att_score.view(batch_size, self.n_heads, -1)
+        sublabel = self.sublabel_fc1(att_score)
+        sublabel = self.sublabel_fc2(sublabel)
+        sublabel = self.sublabel_fc3(sublabel)
+
+        # print("sublabel shape", sublabel.shape)
         # softmax_result = F.softmax(output, dim=1)
         # # Get the result for each row (along axis 1)
         # output = softmax_result.argmax(dim=1)
         return (
             output,
-            output,
+            sublabel,
             output,
         )
 
 
 def main():
     BATCH_SIZE = 16
-    NUM_EPOCH = 50
+    NUM_EPOCH = 400
 
     seed = 42
     np.random.seed(seed)
@@ -361,7 +314,7 @@ def main():
 
     # データセットの用意
     # dataset = datasets.Datasets()
-    # with open("dataset_babel_bmlmovi_120.pkl", "wb") as file:
+    # with open("dataset_babel_bmlmovi_30.pkl", "wb") as file:
     #     pickle.dump(dataset, file)
 
     data_loader = dict()
@@ -404,6 +357,7 @@ def main():
         "max_batch_size": 8,
         "max_seq_len": max_len,
         "device": "cuda",
+        "num_subclasses": 666,
     }
 
     print(
@@ -420,7 +374,7 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
     criterion = torch.nn.CrossEntropyLoss()
     model.train()
-    # summary(model, (3, 617, 52))
+    # summary(model, (617, 156))
     # print(model)
     for epoch in range(1, NUM_EPOCH + 1):
         correct_pb = 0
@@ -433,12 +387,13 @@ def main():
             label = label.cuda()
             sublabel = sublabel.cuda()
             sublabel_seg = sublabel_seg.cuda()
-            # identity_matrix = torch.eye(len(label)).cuda()
-            # result_matrix = identity_matrix[label].cuda()
+            sublabel = F.one_hot(sublabel, num_classes=config["num_subclasses"]).float()
             output, output_sub, output_subseg = model(data, 0)
+            # print("output_sub is", output_sub)
+            # print("sublabel is", sublabel)
             loss = (
                 criterion(output, label)
-                # + criterion(output_sub, sublabel)
+                + criterion(output_sub, sublabel)
                 # + criterion(output_subseg, sublabel_seg)
             )
             optimizer.zero_grad()
@@ -469,7 +424,7 @@ def main():
             data = data.cuda()
             label = label.cuda()
             tic = time.time()
-            output = model(data, 0)
+            output, _, _ = model(data, 0)
 
             _, predict = torch.max(output.data, 1)
             correct_pb += (predict == label).sum().item()

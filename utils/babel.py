@@ -167,8 +167,8 @@ class Datasets(Dataset):
                 fn = poses.shape[0]
 
                 ### start of down sample
-                # sample_rate = int(frame_rate // 25)
-                # fn, poses = motion_downsample(fn, poses, sample_rate)
+                sample_rate = int(frame_rate // 25)
+                fn, poses = motion_downsample(fn, poses, sample_rate)
                 ### end of down sample
                 sub_key = ds + "/" + sub + "/" + act
                 poses = torch.from_numpy(poses).float().cuda()
@@ -185,7 +185,7 @@ class Datasets(Dataset):
                     sublabel, sublabel_seg = get_submotion_frame_range_test(
                         self.babel[dataset_split], featpstr, motion_len
                     )
-                    if 0 < len(sublabel) <= 12:
+                    if 0 < len(sublabel) <= 13:
                         if not isinstance(sublabel_seg[0], list):
                             sublabel_seg = [sublabel_seg]
                         break
@@ -259,12 +259,14 @@ class Datasets(Dataset):
         # self.data = self.data.flatten(start_dim=2, end_dim=3)
         print("self.data's shape after transpose:", self.data.shape)
         print("self.sublabels' shape:", self.sublabels.shape)
-        print("self.sublabels' shape:", len(self.sublabels))
+        print("self.sublabel_seg' shape:", self.sublabel_segs.shape)
         string_labels = self.keys
         label_encoder = LabelEncoder()
         self.numeric_labels = label_encoder.fit_transform(string_labels)
         print("self.numeric_labels' shape:", self.numeric_labels.shape)
         print(label_encoder.classes_, len(label_encoder.classes_))
+        print("self.sublabels' shape:", self.sublabels.shape)
+        print(label_encoder1.classes_, len(label_encoder1.classes_))
         # IPython.embed()
         # print(self.numeric_labels)
 
