@@ -3,6 +3,7 @@ import pickle
 import random
 import sys
 import time
+from itertools import product
 
 import h5py
 import IPython
@@ -265,6 +266,19 @@ class Transformer(nn.Module):
             config["max_seq_len"], config["num_subclasses"], bias=False
         )
 
+        self.sublabelseg_fc1 = nn.Linear(
+            self.head_dim, config["max_seq_len"] // 10, bias=False
+        )
+        self.sublabelseg_fc2 = nn.Linear(
+            config["max_seq_len"] // 10, config["max_seq_len"], bias=False
+        )
+        self.sublabelseg_fc3 = nn.Linear(
+            config["max_seq_len"], config["max_seq_len"], bias=False
+        )
+        self.sublabelseg_fc4 = nn.Linear(
+            config["max_seq_len"], config["max_seq_len"], bias=False
+        )
+
     def forward(self, tokens, start_pos):
         # (m, seq_len)
         batch_size, seq_len, d = tokens.shape
@@ -285,11 +299,15 @@ class Transformer(nn.Module):
         # (m, seq_len, vocab_size)
         output = self.output(h).float()
 
-        att_score = att_score.view(batch_size, self.n_heads, -1)
-        sublabel = self.sublabel_fc1(att_score)
+        sublabel = att_score.view(batch_size, self.n_heads, -1)
+        sublabel = self.sublabel_fc1(sublabel)
         sublabel = self.sublabel_fc2(sublabel)
         sublabel = self.sublabel_fc3(sublabel)
 
+        sublabelseg = self.sublabelseg_fc1(att_score)
+        sublabelseg = self.sublabelseg_fc2(sublabelseg)
+        sublabelseg = self.sublabelseg_fc3(sublabelseg)
+        sublabelseg = self.sublabelseg_fc4(sublabelseg)
         # print("sublabel shape", sublabel.shape)
         # softmax_result = F.softmax(output, dim=1)
         # # Get the result for each row (along axis 1)
@@ -297,13 +315,13 @@ class Transformer(nn.Module):
         return (
             output,
             sublabel,
-            output,
+            sublabelseg,
         )
 
 
 def main():
     BATCH_SIZE = 16
-    NUM_EPOCH = 400
+    NUM_EPOCH = 100
 
     seed = 42
     np.random.seed(seed)
@@ -388,13 +406,27 @@ def main():
             sublabel = sublabel.cuda()
             sublabel_seg = sublabel_seg.cuda()
             sublabel = F.one_hot(sublabel, num_classes=config["num_subclasses"]).float()
+            sublabel_seg_onehot = torch.zeros(
+                sublabel_seg.shape[0],
+                sublabel_seg.shape[1],
+                config["max_seq_len"],
+                config["max_seq_len"],
+            ).cuda()
+            for i, j in product(
+                range(sublabel_seg.shape[0]), range(sublabel_seg.shape[1])
+            ):
+                if sublabel_seg[i, j, 1].item() > config["max_seq_len"] - 1:
+                    sublabel_seg[i, j, 1] = config["max_seq_len"] - 1
+                sublabel_seg_onehot[
+                    i, j, sublabel_seg[i, j, 0].item(), sublabel_seg[i, j, 1].item()
+                ] = 1
             output, output_sub, output_subseg = model(data, 0)
             # print("output_sub is", output_sub)
             # print("sublabel is", sublabel)
             loss = (
                 criterion(output, label)
                 + criterion(output_sub, sublabel)
-                # + criterion(output_subseg, sublabel_seg)
+                + criterion(output_subseg, sublabel_seg_onehot)
             )
             optimizer.zero_grad()
             loss.backward()
