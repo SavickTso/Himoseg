@@ -1,5 +1,6 @@
 import math
 import os
+import pickle
 import sys
 import time
 from sys import exit
@@ -20,7 +21,7 @@ class MultiHeadAttention(nn.Module):
         super(MultiHeadAttention, self).__init__()
         self.n_heads = n_heads
         self.head_dim = d_model // n_heads
-
+        print("head_dim is", self.head_dim)
         self.fc_query = nn.Linear(d_model, d_model)
         self.fc_key = nn.Linear(d_model, d_model)
         self.fc_value = nn.Linear(d_model, d_model)
@@ -29,9 +30,9 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, query, key, value, mask=None):
         # Linear transformations
-        query = self.fc_query(query)
-        key = self.fc_key(key)
-        value = self.fc_value(value)
+        query = self.fc_query(query).to(torch.float16)
+        key = self.fc_key(key).to(torch.float16)
+        value = self.fc_value(value).to(torch.float16)
 
         # Reshape for multi-heads
         query = query.view(query.shape[0], -1, self.n_heads, self.head_dim).permute(
@@ -55,8 +56,11 @@ class MultiHeadAttention(nn.Module):
 
         attention = torch.softmax(energy, dim=-1)
         print("attention's shape is", attention.shape)
-        x = torch.matmul(attention, value)
+        x = torch.matmul(attention, value).to(torch.float32)
 
+        # x = F.scaled_dot_product_attention(query, key, value).to(torch.float32)
+        print("x's dtype is", x.dtype)
+        print("x's shape is", x.shape)
         # Reshape and concatenate
         x = x.permute(0, 2, 1, 3).contiguous()
         x = x.view(x.shape[0], -1, self.n_heads * self.head_dim)
@@ -158,7 +162,6 @@ torch.use_deterministic_algorithms = True
 # Example usage:
 sample_number = 32
 sequence_length = 2533
-data_dimension = 64
 d_model = 156
 n_heads = 4
 d_ff = 128
@@ -166,7 +169,7 @@ num_blocks = 2
 max_len = 2533
 num_classes = 23
 dropout = 0.1
-BATCH_SIZE = 8
+BATCH_SIZE = 32
 NUM_EPOCH = 100
 
 model = Transformer(d_model, n_heads, d_ff, num_blocks, max_len, num_classes, dropout)
@@ -181,7 +184,10 @@ criterion = torch.nn.CrossEntropyLoss()
 
 # データセットの用意
 data_loader = dict()
-dataset = datasets.Datasets()
+# dataset = datasets.Datasets()
+with open("dataset_amass_bmlmovi_120.pkl", "rb") as file:
+    dataset = pickle.load(file)
+
 # IPython.embed()
 test_size = int(0.2 * len(dataset))
 train_size = len(dataset) - test_size
@@ -217,7 +223,7 @@ for epoch in range(1, NUM_EPOCH + 1):
         # print(batch_idx)
         # print("labels shape", label.shape)
         # print("labels shape", label)
-        output_pb = model(data, mask)
+        output_pb = model(data, mask).to(torch.float32)
         # print("the output shape is", output_pb.shape)
         # print("the output is", output_pb)
         loss = criterion(output_pb, label)

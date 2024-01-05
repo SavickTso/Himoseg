@@ -167,8 +167,8 @@ class Datasets(Dataset):
                 fn = poses.shape[0]
 
                 ### start of down sample
-                sample_rate = int(frame_rate // 25)
-                fn, poses = motion_downsample(fn, poses, sample_rate)
+                # sample_rate = int(frame_rate // 25)
+                # fn, poses = motion_downsample(fn, poses, sample_rate)
                 ### end of down sample
                 sub_key = ds + "/" + sub + "/" + act
                 poses = torch.from_numpy(poses).float().cuda()
@@ -251,6 +251,8 @@ class Datasets(Dataset):
         )
         print("self.data's shape before transpose:", self.data.shape)
         self.data = torch.einsum("nctw->nwct", self.data)
+        N, D, T, J = self.data.shape
+        self.data = self.data.reshape(N, T, D * J)
         # self.data = (
         #     self.data.permute(0, 2, 1, 3).contiguous().flatten(start_dim=2, end_dim=3)
         # )

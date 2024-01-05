@@ -17,7 +17,7 @@ from torch.utils.data.dataloader import DataLoader
 from torchsummary import summary
 
 from model import STGCN, Att_branch, Graph, Percep_branch
-from utils import amass as datasets
+from utils import babel as datasets
 from utils import log, util
 from utils.opt import Options
 
@@ -45,8 +45,8 @@ def apply_rotary_embeddings(x, freqs_complex, device):
     # two consecutive values will become a single complex number
 
     # (m, seq_len, num_heads, head_dim/2, 2)
+    # print("xshape os", x.shape)
     x = x.float().reshape(*x.shape[:-1], -1, 2)
-
     # (m, seq_len, num_heads, head_dim/2)
     x_complex = torch.view_as_complex(x)
     # (seq_len, head_dim/2) --> (1, seq_len, 1, head_dim/2)
@@ -60,6 +60,7 @@ def apply_rotary_embeddings(x, freqs_complex, device):
     # (m, seq_len, n_heads, head_dim/2, 2)
     x_out = torch.view_as_real(x_rotated)
     # (m, seq_len, n_heads, head_dim)
+
     x_out = x_out.reshape(x.shape[0], x.shape[1], x.shape[2], x.shape[3] * 2)
 
     return x_out.type_as(x).to(device)
@@ -114,6 +115,72 @@ class SelfAttention(nn.Module):
         self.wk = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wv = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
+
+    def forward(self, x, start_pos, freqs_complex):
+        # seq_len is always 1 during inference
+        batch_size, seq_len, _ = x.shape
+
+        # (m, seq_len, dim)
+        xq = self.wq(x)
+
+        # (m, seq_len, h_kv * head_dim)
+        xk = self.wk(x)
+        xv = self.wv(x)
+        # (m, seq_len, n_heads, head_dim)
+        xq = xq.view(batch_size, seq_len, self.n_heads_q, self.head_dim)
+
+        # (m, seq_len, h_kv, head_dim)
+        xk = xk.view(batch_size, seq_len, self.n_kv_heads, self.head_dim)
+        xv = xv.view(batch_size, seq_len, self.n_kv_heads, self.head_dim)
+
+        # (m, seq_len, num_head, head_dim)
+        xq = apply_rotary_embeddings(xq, freqs_complex, device=x.device)
+
+        # (m, seq_len, h_kv, head_dim)
+        xk = apply_rotary_embeddings(xk, freqs_complex, device=x.device)
+
+        # (m, seq_len, h_kv, head_dim)
+        keys, values = xk, xv
+        # (m, seq_len, h_kv, head_dim) --> (m, seq_len, n_heads, head_dim)
+        keys = repeat_kv(keys, self.n_rep)
+        values = repeat_kv(values, self.n_rep)
+
+        # (m, n_heads, seq_len, head_dim)
+        # seq_len is 1 for xq during inference
+        xq = xq.transpose(1, 2)
+
+        # (m, n_heads, seq_len, head_dim)
+        keys = keys.transpose(1, 2)
+        values = values.transpose(1, 2)
+
+        # (m, n_heads, seq_len_q, head_dim) @ (m, n_heads, head_dim, seq_len) -> (m, n_heads, seq_len_q, seq_len)
+        scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
+
+        # (m, n_heads, seq_len_q, seq_len)
+        scores = F.softmax(scores.float(), dim=-1).type_as(xq)
+
+        # (m, n_heads, seq_len_q, seq_len) @ (m, n_heads, seq_len, head_dim) -> (m, n_heads, seq_len_q, head_dim)
+        output = torch.matmul(scores, values)
+
+        # ((m, n_heads, seq_len_q, head_dim) -> (m, seq_len_q, dim)
+        output = output.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
+
+        # (m, seq_len_q, dim)
+        return self.wo(output)
+
+
+class SimpleSelfAttention(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+
+        self.n_heads = config["n_heads"]
+        self.dim = config["embed_dim"]
+        self.n_heads_q = self.n_heads
+        self.head_dim = self.dim // self.n_heads
+
+        self.wq = nn.Linear(self.dim, self.dim, bias=False)
+        self.wk = nn.Linear(self.dim, self.dim, bias=False)
+        self.wv = nn.Linear(self.dim, self.dim, bias=False)
 
     def forward(self, x, start_pos, freqs_complex):
         # seq_len is always 1 during inference
@@ -252,6 +319,7 @@ class Transformer(nn.Module):
 
     def forward(self, tokens, start_pos):
         # (m, seq_len)
+
         batch_size, seq_len, d = tokens.shape
 
         # (m, seq_len) -> (m, seq_len, embed_dim)
@@ -273,12 +341,16 @@ class Transformer(nn.Module):
         # softmax_result = F.softmax(output, dim=1)
         # # Get the result for each row (along axis 1)
         # output = softmax_result.argmax(dim=1)
-        return output
+        return (
+            output,
+            output,
+            output,
+        )
 
 
 def main():
-    BATCH_SIZE = 4
-    NUM_EPOCH = 100
+    BATCH_SIZE = 16
+    NUM_EPOCH = 50
 
     seed = 42
     np.random.seed(seed)
@@ -289,12 +361,12 @@ def main():
 
     # データセットの用意
     # dataset = datasets.Datasets()
-    # with open("dataset_amass_bmlmovi_120.pkl", "wb") as file:
+    # with open("dataset_babel_bmlmovi_120.pkl", "wb") as file:
     #     pickle.dump(dataset, file)
 
     data_loader = dict()
 
-    with open("dataset_amass_bmlmovi_120.pkl", "rb") as file:
+    with open("dataset_babel_bmlmovi_30.pkl", "rb") as file:
         dataset = pickle.load(file)
 
     # print("dataset shape is:", dataset.shape)
@@ -323,8 +395,8 @@ def main():
     config = {
         "n_layers": 1,
         "embed_dim": 156,
-        "n_heads": 32,
-        "n_kv_heads": 8,
+        "n_heads": 13,
+        "n_kv_heads": 13,
         "num_classes": 23,
         "multiple_of": 64,
         "ffn_dim_multiplier": None,
@@ -354,13 +426,21 @@ def main():
         correct_pb = 0
         sum_loss = 0
         # IPython.embed()
-        for batch_idx, (data, label) in enumerate(data_loader["train"]):
+        for batch_idx, (data, label, sublabel, sublabel_seg) in enumerate(
+            data_loader["train"]
+        ):
             data = data.cuda()
             label = label.cuda()
+            sublabel = sublabel.cuda()
+            sublabel_seg = sublabel_seg.cuda()
             # identity_matrix = torch.eye(len(label)).cuda()
             # result_matrix = identity_matrix[label].cuda()
-            output = model(data, 0)
-            loss = criterion(output, label)
+            output, output_sub, output_subseg = model(data, 0)
+            loss = (
+                criterion(output, label)
+                # + criterion(output_sub, sublabel)
+                # + criterion(output_subseg, sublabel_seg)
+            )
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -383,7 +463,9 @@ def main():
 
     correct_pb = 0
     with torch.no_grad():
-        for batch_idx, (data, label) in enumerate(data_loader["test"]):
+        for batch_idx, (data, label, sublabel, sublabel_seg) in enumerate(
+            data_loader["test"]
+        ):
             data = data.cuda()
             label = label.cuda()
             tic = time.time()
