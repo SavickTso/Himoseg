@@ -291,20 +291,22 @@ class Transformer(nn.Module):
 
         # Consecutively apply all the encoder layers
         # (m, seq_len, dim)
-        for layer in self.layers:
+        for block_idx, layer in enumerate(self.layers):
             h, att_score = layer(h, start_pos, freqs_complex)
+            if block_idx == 1:
+                sublabel_att = att_score
         h = h.mean(dim=1)
         h = self.norm(h)
 
         # (m, seq_len, vocab_size)
         output = self.output(h).float()
 
-        sublabel = att_score.view(batch_size, self.n_heads, -1)
+        sublabel = sublabel_att.view(batch_size, self.n_heads, -1)
         sublabel = self.sublabel_fc1(sublabel)
         sublabel = self.sublabel_fc2(sublabel)
         sublabel = self.sublabel_fc3(sublabel)
 
-        sublabelseg = self.sublabelseg_fc1(att_score)
+        sublabelseg = self.sublabelseg_fc1(sublabel_att)
         sublabelseg = self.sublabelseg_fc2(sublabelseg)
         sublabelseg = self.sublabelseg_fc3(sublabelseg)
         sublabelseg = self.sublabelseg_fc4(sublabelseg)

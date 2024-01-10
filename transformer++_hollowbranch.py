@@ -291,7 +291,7 @@ class Transformer(nn.Module):
 
         # Consecutively apply all the encoder layers
         # (m, seq_len, dim)
-        for layer in self.layers:
+        for block_idx, layer in enumerate(self.layers):
             h, att_score = layer(h, start_pos, freqs_complex)
         h = h.mean(dim=1)
         h = self.norm(h)
