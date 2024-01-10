@@ -244,6 +244,7 @@ class Transformer(nn.Module):
         super().__init__()
         self.n_layers = config["n_layers"]
         self.n_heads = config["n_heads"]
+        self.sidebranch_order = config["order_sidebranch"] - 1
         self.head_dim = config["embed_dim"] // config["n_heads"]
         self.num_classes = config["num_classes"]
         self.layers = nn.ModuleList()
@@ -293,7 +294,7 @@ class Transformer(nn.Module):
         # (m, seq_len, dim)
         for block_idx, layer in enumerate(self.layers):
             h, att_score = layer(h, start_pos, freqs_complex)
-            if block_idx == 1:
+            if block_idx == self.sidebranch_order:
                 sublabel_att = att_score
         h = h.mean(dim=1)
         h = self.norm(h)
@@ -367,6 +368,7 @@ def main():
 
     config = {
         "n_layers": 5,
+        "order_sidebranch": 3,
         "embed_dim": 156,
         "n_heads": 13,
         "n_kv_heads": 13,
