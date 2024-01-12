@@ -18,7 +18,7 @@ from torch.utils.data.dataloader import DataLoader
 from torchsummary import summary
 
 from model import STGCN, Att_branch, Graph, Percep_branch
-from utils import babel_BMLmovi as datasets
+from utils import babel_full as datasets
 from utils import log, util
 from utils.opt import Options
 
@@ -334,9 +334,9 @@ def main():
     torch.use_deterministic_algorithms = True
 
     # データセットの用意
-    dataset = datasets.Datasets()
-    with open("dataset_babel_bmlmovi_30.pkl", "wb") as file:
-        pickle.dump(dataset, file)
+    # dataset = datasets.Datasets()
+    # with open("dataset_babel_bmlmovi_120.pkl", "wb") as file:
+    #     pickle.dump(dataset, file)
 
     data_loader = dict()
 
@@ -367,7 +367,7 @@ def main():
     max_len = data_loader["test"].sampler.data_source.dataset.data.shape[1]
 
     config = {
-        "n_layers": 7,
+        "n_layers": 5,
         "order_sidebranch": 3,
         "embed_dim": 156,
         "n_heads": 13,
@@ -432,8 +432,8 @@ def main():
             # print("output_sub shape is", output_sub.shape)
             loss = (
                 criterion(output, label)
-                # + criterion(output_sub, sublabel)
-                # + criterion(output_subseg, sublabel_seg_onehot)
+                + criterion(output_sub, sublabel)
+                + criterion(output_subseg, sublabel_seg_onehot)
             )
             optimizer.zero_grad()
             loss.backward()
